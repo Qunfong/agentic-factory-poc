@@ -1,0 +1,12 @@
+[
+  {
+    "id": "WI-1",
+    "title": "DELETE /readings?meterId=<id> removes all readings of a meter and returns 204",
+    "ac_ids": ["AC-F16-1"],
+    "paths": [
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/test/java/com/example/meter/ReadingDeleteTest.java"
+    ],
+    "depends_on": []
+  }
+]

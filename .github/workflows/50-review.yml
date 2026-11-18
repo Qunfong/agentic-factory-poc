@@ -1,0 +1,79 @@
+# Stage 6: multi-model AI review after verify passed. Advisory only (ADR-003).
+# Three families, 2-of-3 consensus (brief 018). A reviewer that fails is infra-failure; fewer than 2 answers
+# is an incomplete review with needs-human-review, never a pass. Red tier always gets needs-human-review (Q22).
+name: 50 review
+on:
+  workflow_run:
+    workflows: ["40 verify"]
+    types: [completed]
+permissions: {}
+jobs:
+  authorize:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Only the factory bot, a maintainer or an admin may spend review budget (brief 009, Q30)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          TRIGGERING_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+          EVENT: ${{ github.event.workflow_run.event }}
+        run: python3 tools/authorize.py --event "$EVENT" "$ACTOR" "$TRIGGERING_ACTOR"
+
+  review:
+    needs: authorize
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    # One call with timeout T (models.yaml timeout_s) and backoff 8/16/32 s: two timeouts take 2T+8;
+    # four slow transient errors take 4T+56. Grok (T=480): 968 s, or 1976 s. Others (T=180): 368 s, or 776 s.
+    # Reviewers run in parallel, so the slowest one bounds them. Then the verifiers run one at a time, up to
+    # two per single-source finding, so the verify phase grows with the finding count and no job limit
+    # bounds it. Then one merge call (gpt-5, 776 s at most). With timeouts only and no verifier call, the
+    # worst case is about 968 + 776 s plus about 2 min of setup, so 31 min. The other 14 min cover about one
+    # Grok verifier that times out twice, or a few that answer in about 4 min. A job that hits this limit
+    # posts nothing and fails, which is never a pass.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Check which review models are configured (presence only, never values)
+        env:
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY != '' && 'set' || '' }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_AI_V1_ENDPOINT: ${{ vars.AZURE_AI_V1_ENDPOINT }}
+        run: python3 tools/check_secrets_env.py --role review
+      - name: Install the hash-pinned review dependencies
+        run: |
+          pip install -q --require-hashes --only-binary=:all: -r tools/requirements-review.txt
+      - name: Review with Azure OpenAI, Azure Grok and Azure DeepSeek, verify single-source findings across families
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_AI_V1_ENDPOINT: ${{ vars.AZURE_AI_V1_ENDPOINT }}
+        run: python3 tools/review.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-record-review-${{ github.run_id }}
+          path: run-record.json
+          if-no-files-found: ignore
+          retention-days: 7

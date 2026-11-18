@@ -1,0 +1,17 @@
+# Path patterns -> risk tier and owner.
+# The highest tier over all matching rules wins (tools/check_tier.py); the code adds a red floor for tools/, .github/, factory/, .claude/, AGENTS.md and CLAUDE.md.
+# Downgrading a path needs the domain owner or the security owner (ADR-008).
+default: amber
+rules:
+  - {pattern: "docs/**", tier: green, owner: tech-lead}
+  - {pattern: "**/*.md", tier: green, owner: tech-lead}
+  - {pattern: "app/src/main/java/**/billing/**", tier: red, owner: domain-owner}
+  - {pattern: "app/src/main/java/**/security/**", tier: red, owner: security-owner}
+  - {pattern: "app/src/main/resources/db/migration/**", tier: red, owner: domain-owner}
+  - {pattern: "app/pom.xml", tier: amber, owner: tech-lead}
+  - {pattern: ".github/**", tier: red, owner: security-owner}
+  - {pattern: "factory/**", tier: red, owner: security-owner}
+  - {pattern: "tools/**", tier: red, owner: security-owner}
+  - {pattern: ".claude/**", tier: red, owner: security-owner}
+  - {pattern: "AGENTS.md", tier: red, owner: security-owner}
+  - {pattern: "CLAUDE.md", tier: red, owner: security-owner}

@@ -1,0 +1,43 @@
+# Every skill a factory agent may load, pinned by the sha256 of its directory (tools/load_skills.py tree_hash).
+# Charters pick from this list by name and the same hash; tools/load_skills.py --check keeps all three in sync.
+# Third-party skills are vendored from a pinned 40-hex commit by tools/vendor_skills.sh, never loaded live.
+# Block style and plain scalars only: load_skills.py reads this file without PyYAML.
+sources:
+  pstack:
+    repo: https://github.com/cursor/plugins
+    commit: 5866df557357d005b3c0c9d3da0d9e739b4bdde3
+    license: MIT
+    license_file: harness/pstack/claude-code/LICENSE
+    reviewed: pending
+skills:
+  create-verification-skill:
+    # Interactive use only (brief 001 decision 5): --check refuses it in any charter.
+    use: interactive
+    dir: factory/skills/vendor/create-verification-skill
+    source: pstack
+    path: harness/pstack/claude-code/skills/create-verification-skill
+    sha256: 8d0a21608a8ec5d14091389597f96fba2af93d906aa5c22f470fb0477c22a0b9
+  minimal-change:
+    # Adapted from ponytail (MIT); attribution and licence in its NOTICE (brief 014).
+    dir: factory/skills/minimal-change
+    sha256: 03d071cbb98ccc623b3c549f6ecef462229b98d39d7992101b6a71d9b2f3b386
+  meter-conventions:
+    dir: factory/skills/meter-conventions
+    sha256: 08ab672be423310352906e957cb3e7b3d28c800b29d2075bc4f79c2bb941f77d
+  meter-test-conventions:
+    dir: factory/skills/meter-test-conventions
+    sha256: c5da7c27bd40bedb1d306ec996448b6133f944a8bd891348aeb77050a3e63032
+  test-behaviour:
+    dir: factory/skills/test-behaviour
+    sha256: 1f3508fc734ccf04dc26ce99b906df5d7fa716b14a452d109cd8b5308fbfa0fc
+  spec-shape:
+    dir: factory/skills/spec-shape
+    sha256: e6eaf011e79671da8d92c5b987b38d6911365474c93cfac456951d4df1a384b2
+  impact-check:
+    dir: factory/skills/impact-check
+    sha256: ac5a88bc81f0e4182fdaabcb94371dbd054367b5a4d83a79959858637dce8750
+  verify-meter:
+    # Drafted by Claude Code with create-verification-skill (brief 001 decision 5); awaiting Cowork's review.
+    # In no charter: CI's builder may not run curl or java (brief 010 decision 3). Interactive use only; no eval setup loads it (ANSWERS Q46).
+    dir: factory/skills/verify-meter
+    sha256: e8f4b69fbc0348465b9886a68fea01092af733af56ad3f8a0ebfdc9f61c5d5f7

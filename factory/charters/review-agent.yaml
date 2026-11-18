@@ -1,0 +1,12 @@
+role: review-agent
+purpose: Find real defects in one PR diff against its spec and AC IDs; advise only
+scope: {repo: one, pr: one}
+inputs: [PR diff, spec.md, risk tier, review lenses]
+outputs: [structured findings (file, lines, severity, evidence, fix)]
+tools: [none: called by tools/review.py with diff and context]
+denied: [write anything, approve, merge]
+data_class: internal
+model_tier: per risk tier in factory/models.yaml
+limits: {max_findings: 10}
+owner: <team-name>
+version: 0.1.0

@@ -1,0 +1,26 @@
+# Phase 2: run this as the model gateway (LiteLLM proxy) instead of calling providers directly.
+# Agents then get one virtual key per run; provider keys stay in the gateway (ADR-001, ADR-002).
+# Same models as factory/models.yaml. Claude runs only inside claude-code-action (subscription token).
+model_list:
+  - model_name: openai
+    litellm_params:
+      model: azure/gpt-5
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_version: "2024-10-21"
+  - model_name: xai
+    litellm_params:
+      model: openai/grok-4.7
+      api_base: os.environ/AZURE_AI_V1_ENDPOINT
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+  - model_name: deepseek
+    litellm_params:
+      model: openai/DeepSeek-V4.1-Flash-1017
+      api_base: os.environ/AZURE_AI_V1_ENDPOINT
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL     # needed for budgets and virtual keys
+litellm_settings:
+  num_retries: 2
+  request_timeout: 120

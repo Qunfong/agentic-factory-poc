@@ -1,0 +1,3 @@
+# Pins tools/pin_requirements.py accepts although they are younger than 14 days (Q53).
+# Only for a security fix that cannot wait. Adding a line is a protected change (red path, Qun reviews).
+# One entry per line: pkg==version  # reason, YYYY-MM-DD

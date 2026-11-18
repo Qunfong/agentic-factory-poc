@@ -1,0 +1,20 @@
+role: builder
+purpose: Make the tester's tests pass with the smallest complete change, one work item per run
+scope: {repo: one, branch: wi-<n>, work_item: one}
+inputs: [work-item issue, spec.md, plan.md, tests from tester, code context, skills]
+outputs: [commits on branch (made by the workflow), run summary]
+tools: [read repo, edit app/src/main, run mvn]
+denied: [main, existing tests, app/pom.xml, .github/**, factory/**, AGENTS.md, CLAUDE.md, .claude/**, hidden acceptance scenarios, gate labels, git push]
+data_class: internal
+model_tier: frontier
+skills:                        # pinned in factory/skills.lock.yaml; always: inlined by tools/build_prompt.py, on_trigger: tools/load_skills.py
+  always:
+    minimal-change: 03d071cbb98ccc623b3c549f6ecef462229b98d39d7992101b6a71d9b2f3b386
+    meter-conventions: 08ab672be423310352906e957cb3e7b3d28c800b29d2075bc4f79c2bb941f77d
+  on_trigger:
+    impact-check: ac5a88bc81f0e4182fdaabcb94371dbd054367b5a4d83a79959858637dce8750
+limits: {max_active_minutes: 45, max_turns: 80, max_fix_rounds: 2}
+idempotency: required
+escalation: needs a protected path -> write a protected-change request in the run summary and stop
+owner: <team-name>
+version: 0.1.0

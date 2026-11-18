@@ -1,0 +1,25 @@
+# Stage 2 -> 3: merging the spec PR is the plan gate (CODEOWNERS: tech lead).
+# This turns work-items.json into work-item issues and dispatches buildable ones.
+name: 20 breakdown
+on:
+  push:
+    branches: [master]
+    paths: ["docs/specs/*/work-items.json"]
+permissions:
+  contents: read
+  issues: write
+  actions: write
+jobs:
+  breakdown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: "Create work items (idempotent: skips items that already exist)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WIP_LIMIT: ${{ vars.WIP_LIMIT || '3' }}
+        run: |
+          for f in $(git diff --name-only HEAD~1 HEAD -- 'docs/specs/*/work-items.json'); do
+            python3 tools/create_work_items.py "$f"
+          done

@@ -1,0 +1,24 @@
+# WIP admission control: dispatch queued work items while open agent PRs < WIP_LIMIT.
+# Only items whose `queued` label was last applied by the factory bot, a workflow of this repo, or a
+# maintain/admin collaborator start a build: a write collaborator must not reach model spend (Q27).
+name: 25 dispatch
+on:
+  schedule: [{cron: "*/30 7-18 * * 1-5"}]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  pull-requests: read
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          WIP_LIMIT: ${{ vars.WIP_LIMIT || '3' }}
+          FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+        run: python3 tools/create_work_items.py --dispatch-queued

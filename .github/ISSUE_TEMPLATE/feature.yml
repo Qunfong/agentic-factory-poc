@@ -1,0 +1,29 @@
+name: Feature
+description: A feature for the factory. A product owner approves it with the gate:intent-approved label.
+labels: [feature]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem and user, description: "Who needs what, and why"}
+    validations: {required: true}
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: 'One per line, numbered from 1, e.g. "AC-1: a negative reading is rejected with 400". The spec writer turns AC-1 into AC-F<issue>-1; hidden scenarios are tagged with that full ID.'
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Out of scope}
+  - type: input
+    id: design
+    attributes: {label: "Design link (tokens, reference images, mockups)"}
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Readiness
+      options:
+        - label: Problem is clear and testable criteria have IDs
+          required: true
+        - label: Hidden acceptance scenarios exist for every AC ID (product owner or QA)
+          required: true

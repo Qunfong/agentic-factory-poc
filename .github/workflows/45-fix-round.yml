@@ -1,0 +1,60 @@
+# When verify fails on an agent PR, start the next fix round (max 2, then escalate).
+name: 45 fix round
+on:
+  workflow_run:
+    workflows: ["40 verify"]
+    types: [completed]
+permissions: {}
+jobs:
+  authorize:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'wi-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Only the factory bot, a maintainer or an admin may start the next build round (brief 011, Q27)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          TRIGGERING_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+          EVENT: ${{ github.event.workflow_run.event }}
+        run: python3 tools/authorize.py --event "$EVENT" "$ACTOR" "$TRIGGERING_ACTOR"
+
+  next-round:
+    needs: authorize
+    # Only same-repo agent branches: a fork can't name a branch that starts a round.
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'wi-')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Dispatch next builder round for agent PRs
+        run: |
+          [[ "$BRANCH" =~ ^wi-([1-9][0-9]*)$ ]] || { echo "::error::agent branch must be wi-<issue number>"; exit 1; }
+          issue="${BASH_REMATCH[1]}"
+          rounds=$(gh issue view "$issue" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name | select(startswith("round:"))] | length')
+          next=$((rounds + 1))
+          if [ "$next" -gt 2 ]; then
+            gh issue edit "$issue" -R "$GITHUB_REPOSITORY" --add-label escalated
+            gh issue comment "$issue" -R "$GITHUB_REPOSITORY" --body "Fix-round limit reached; a person takes over."
+            exit 0
+          fi
+          gh issue edit "$issue" -R "$GITHUB_REPOSITORY" --add-label "round:$next"
+          gh workflow run "30 build" -R "$GITHUB_REPOSITORY" -f issue="$issue" -f round="$next"

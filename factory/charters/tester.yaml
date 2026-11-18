@@ -1,0 +1,19 @@
+role: tester
+purpose: Write failing tests for one work item from its spec and AC IDs, before any implementation
+scope: {repo: one, branch: wi-<n>, work_item: one}
+inputs: [work-item issue, spec.md, plan.md, existing code (read only)]
+outputs: [new test files under app/src/test, run summary]
+tools: [read repo, write app/src/test (new files only), run mvn test]
+denied: [app/src/main/**, existing test files, app/pom.xml, .github/**, factory/**, docs/**]
+data_class: internal
+model_tier: frontier
+skills:                        # pinned in factory/skills.lock.yaml; always: inlined by tools/build_prompt.py, on_trigger: tools/load_skills.py
+  delivery: prompt           # Codex reads no .claude/skills, so on-trigger skills are named by path in the prompt
+  always:
+    test-behaviour: 1f3508fc734ccf04dc26ce99b906df5d7fa716b14a452d109cd8b5308fbfa0fc
+    meter-test-conventions: c5da7c27bd40bedb1d306ec996448b6133f944a8bd891348aeb77050a3e63032
+limits: {max_active_minutes: 20, max_fix_rounds: 0}
+idempotency: required
+escalation: a test that needs a production-code decision -> question on the issue
+owner: <team-name>
+version: 0.1.0

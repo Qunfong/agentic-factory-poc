@@ -1,0 +1,278 @@
+# Stage 4: tester (Azure OpenAI gpt-5, Codex) writes tests from the spec, then builder (Claude) implements.
+# Agent jobs hold no write token and no shared cache. Each hands over a patch; publish
+# guards, commits and pushes it with the factory-bot App token, so verify reruns.
+name: 30 build
+on:
+  workflow_dispatch:
+    inputs:
+      issue: {description: "work-item issue number", required: true}
+      round: {description: "fix round (0 = first build)", required: false, default: "0"}
+concurrency:
+  group: build-${{ inputs.issue }}
+  cancel-in-progress: false
+permissions: {}
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Only the factory bot, a maintainer or an admin may start an agent (brief 009)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          EVENT: ${{ github.event_name }}
+        run: python3 tools/authorize.py --event "$EVENT" "$ACTOR" "$TRIGGERING_ACTOR"
+      - name: Fail now, not mid-run, when the builder's or tester's credentials are missing (presence only)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' && 'set' || '' }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY != '' && 'set' || '' }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+        run: python3 tools/check_secrets_env.py --role builder --role tester
+
+  prepare:
+    needs: authorize
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      base_sha: ${{ steps.base.outputs.sha }}
+      run_tester: ${{ steps.base.outputs.run_tester }}
+    env:
+      ISSUE: ${{ inputs.issue }}
+      ROUND: ${{ inputs.round }}
+    steps:
+      - id: base
+        name: Check the round and record the base commit before any agent runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$ISSUE" =~ ^[1-9][0-9]*$ && "$ROUND" =~ ^[0-9]+$ ]] || { echo "::error::issue must be a number without leading zeros, round numeric"; exit 1; }
+          if [ "$ROUND" -gt 2 ]; then gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label escalated; echo "fix-round limit reached"; exit 1; fi
+          if sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/wi-$ISSUE" --jq .object.sha 2>/dev/null); then exists=true; else sha="$GITHUB_SHA"; exists=false; fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::could not resolve the base commit of wi-$ISSUE"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # The tester runs once per work item: on round 0, before its tests are on the branch.
+          if [ "$ROUND" = 0 ] && [ "$exists" = false ]; then echo "run_tester=true"; else echo "run_tester=false"; fi >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/wi-input"
+          gh issue view "$ISSUE" -R "$GITHUB_REPOSITORY" --json title,body,labels > "$RUNNER_TEMP/wi-input/issue.json"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          persist-credentials: false
+      - name: Build the agent prompts (always-on skills inlined, brief 010)
+        run: |
+          python3 tools/build_prompt.py tester "$RUNNER_TEMP/wi-input/issue.json" > "$RUNNER_TEMP/wi-input/tester.md"
+          python3 tools/build_prompt.py builder "$RUNNER_TEMP/wi-input/issue.json" > "$RUNNER_TEMP/wi-input/builder.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wi-input
+          path: ${{ runner.temp }}/wi-input
+          retention-days: 7
+
+  tester:
+    needs: [authorize, prepare]
+    if: needs.prepare.outputs.run_tester == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.base_sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21"}
+      - uses: actions/download-artifact@v4
+        with: {name: wi-input, path: "${{ runner.temp }}/wi-input"}
+      - name: Empty .claude/skills; the tester's pinned skills are inlined in its prompt (brief 001)
+        run: python3 tools/load_skills.py tester
+      - name: Install the hash-pinned tester-loop dependencies (litellm, same pin as 50-review)
+        run: |
+          pip install -q --require-hashes --only-binary=:all: -r tools/requirements-review.txt
+      - name: Tester (Azure OpenAI gpt-5 via a quiet LiteLLM tool loop; brief 013)
+        env:
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          PROMPT_FILE: ${{ runner.temp }}/wi-input/tester.md
+          TRANSCRIPT_FILE: ${{ runner.temp }}/out/tester-transcript.json
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          python3 tools/tester_loop.py --prompt-file "$PROMPT_FILE" --charter factory/charters/tester.yaml --out "$TRANSCRIPT_FILE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-record-tester-transcript-${{ github.run_id }}
+          path: ${{ runner.temp }}/out/tester-transcript.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Hand over the tests as a patch (publish guards, commits and pushes them)
+        env:
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          git add -A
+          git diff --cached --binary --full-index "$BASE_SHA" > "$RUNNER_TEMP/out/changes.patch"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patch-tester
+          path: ${{ runner.temp }}/out/changes.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  tester-record:
+    # Its own job: after the agent step, the tester's job and checkout can't be trusted (QUESTIONS Q19).
+    needs: [prepare, tester]
+    if: ${{ always() && needs.tester.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.base_sha }}
+      - name: Run record (tool from this workflow's own commit)
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ISSUE: ${{ inputs.issue }}
+          ROUND: ${{ inputs.round }}
+          AGENT_STATUS: ${{ needs.tester.result }}
+        run: |
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::github.workflow_sha is not a commit id: '$WORKFLOW_SHA'"; exit 1; }
+          git cat-file -e "$WORKFLOW_SHA^{commit}" 2>/dev/null || git fetch -q --no-tags --depth 1 origin "$WORKFLOW_SHA"
+          git show "$WORKFLOW_SHA:tools/run_record.py" > "$RUNNER_TEMP/run_record.py"
+          python3 "$RUNNER_TEMP/run_record.py" --role tester --issue "$ISSUE" --model azure/gpt-5 --round "$ROUND" --status "$AGENT_STATUS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-record-tester-${{ github.run_id }}
+          path: run-record.json
+          retention-days: 7
+
+  publish-tests:
+    needs: [prepare, tester]
+    permissions: {}
+    uses: ./.github/workflows/publish.yml
+    with:
+      role: tester
+      issue: ${{ inputs.issue }}
+      round: ${{ inputs.round }}
+      base_sha: ${{ needs.prepare.outputs.base_sha }}
+      client_id: ${{ vars.FACTORY_APP_CLIENT_ID }}
+      tester_model: azure/gpt-5
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+  builder:
+    # Starts from the commit publish made for the tests, so they are existing files the builder can't change.
+    needs: [authorize, prepare, publish-tests]
+    # Without tests from this run, the builder may start only when the tester was not due.
+    if: ${{ !cancelled() && needs.authorize.result == 'success' && needs.prepare.result == 'success' && (needs.publish-tests.result == 'success' || (needs.publish-tests.result == 'skipped' && needs.prepare.outputs.run_tester != 'true')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      ISSUE: ${{ inputs.issue }}
+      ROUND: ${{ inputs.round }}
+      BASE_SHA: ${{ needs.publish-tests.outputs.head_sha || needs.prepare.outputs.base_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21"}
+      - uses: actions/download-artifact@v4
+        with: {name: wi-input, path: "${{ runner.temp }}/wi-input"}
+      - name: Load only the builder's pinned on-trigger skills into .claude/skills (briefs 001, 010)
+        run: python3 tools/load_skills.py builder
+      - name: Builder (Claude Code, pinned skills only, read-only token)
+        uses: anthropics/claude-code-action@v1
+        env:
+          # Debug mode would print the full transcript to the public log, whatever show_full_output says.
+          ACTIONS_STEP_DEBUG: "false"
+        with:
+          show_full_output: false
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: "${{ format('Follow the instructions in the file {0}. Work item #{1}, fix round {2}.', format('{0}/wi-input/builder.md', runner.temp), inputs.issue, inputs.round) }}"
+          claude_args: >-
+            --model claude-opus-5-5 --max-turns 80
+            --allowedTools "Read,Glob,Grep,Skill,Edit(app/src/main/**),Write(app/src/main/**),Bash(mvn:*),Bash(git status),Bash(git diff:*)"
+      - name: Hand over the change as a patch (publish guards, commits, pushes and opens the PR)
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          git add -A
+          git diff --cached --binary --full-index "$BASE_SHA" > "$RUNNER_TEMP/out/changes.patch"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patch-builder
+          path: ${{ runner.temp }}/out/changes.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  builder-record:
+    # Its own job: after the agent step, the agent's job and checkout can't be trusted (QUESTIONS Q19).
+    needs: [prepare, publish-tests, builder]
+    if: ${{ always() && needs.builder.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-tests.outputs.head_sha || needs.prepare.outputs.base_sha }}
+      - name: Run record (tool from this workflow's own commit)
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ISSUE: ${{ inputs.issue }}
+          ROUND: ${{ inputs.round }}
+          AGENT_STATUS: ${{ needs.builder.result }}
+        run: |
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::github.workflow_sha is not a commit id: '$WORKFLOW_SHA'"; exit 1; }
+          git cat-file -e "$WORKFLOW_SHA^{commit}" 2>/dev/null || git fetch -q --no-tags --depth 1 origin "$WORKFLOW_SHA"
+          git show "$WORKFLOW_SHA:tools/run_record.py" > "$RUNNER_TEMP/run_record.py"
+          python3 "$RUNNER_TEMP/run_record.py" --role builder --issue "$ISSUE" --model anthropic/claude-opus-5-5 --round "$ROUND" --status "$AGENT_STATUS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-record-build-${{ github.run_id }}
+          path: run-record.json
+          retention-days: 7
+
+  publish-code:
+    needs: [prepare, publish-tests, builder]
+    if: ${{ !cancelled() && needs.builder.result == 'success' }}
+    permissions: {}
+    uses: ./.github/workflows/publish.yml
+    with:
+      role: builder
+      issue: ${{ inputs.issue }}
+      round: ${{ inputs.round }}
+      base_sha: ${{ needs.publish-tests.outputs.head_sha || needs.prepare.outputs.base_sha }}
+      client_id: ${{ vars.FACTORY_APP_CLIENT_ID }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+  builder-failed:
+    # A wi-<n> branch holding only tests must not sit unnoticed (Q11). A rerun picks it up.
+    needs: [prepare, builder, publish-code]
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.builder.result == 'failure' || needs.publish-code.result == 'failure') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Label the work item factory:builder-failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ inputs.issue }}
+        run: |
+          [[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::issue must be a number without leading zeros"; exit 1; }
+          gh label create factory:builder-failed -R "$GITHUB_REPOSITORY" --color B60205 --description "Builder failed; branch holds tests only" --force
+          gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label factory:builder-failed

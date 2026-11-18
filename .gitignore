@@ -1,0 +1,8 @@
+__pycache__/
+app/target/
+run-record.json
+.env*
+# Filled per run by tools/load_skills.py from pinned copies; never committed.
+/.claude/skills/
+
+acceptance-repo-example/target/

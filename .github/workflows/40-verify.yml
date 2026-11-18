@@ -1,0 +1,233 @@
+# Stage 5: required checks. Agent-written code runs here without secrets (ADR-013).
+# Make the job "required" the only required status check in branch protection.
+name: 40 verify
+on:
+  pull_request: {}
+  merge_group: {}
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21", cache: maven}
+      - name: Build and unit tests (cheap checks first)
+        run: mvn -B -f app/pom.xml verify
+      - uses: actions/upload-artifact@v4
+        with: {name: app-jar, path: app/target/*.jar, retention-days: 1}
+
+  static:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - name: Workflow security policy (briefs 004, 006)
+        run: |
+          pip install -q --require-hashes --only-binary=:all: -r tools/requirements.txt
+          python3 tools/check_workflow_policy.py
+      - name: Skills pinned per role; charters, lock and files agree (brief 001)
+        run: python3 tools/load_skills.py --check
+      - name: Unit tests for tools/* (Audit round 2, A1 - these guard the path/tier/permission checks and were never run in CI before this)
+        timeout-minutes: 5
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: shellcheck for actionlint (pinned release, sha256 from the GitHub release asset digest, Q13)
+        env:
+          SHELLCHECK_VERSION: 0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+          curl -fsSL -o "$tarball" "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "$SHELLCHECK_SHA256  $tarball" | sha256sum -c -
+          tar -xJf "$tarball" -C "$RUNNER_TEMP" "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          "$RUNNER_TEMP/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" --version
+          echo "$RUNNER_TEMP/shellcheck-v${SHELLCHECK_VERSION}" >> "$GITHUB_PATH"
+      - name: actionlint (pinned release, sha256 from the GitHub release asset digest)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          SHELLCHECK_VERSION: 0.11.0
+        run: |
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$tarball" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $tarball" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" actionlint
+          sc="$RUNNER_TEMP/shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          [ "$(command -v shellcheck)" = "$sc" ] || { echo "::error::shellcheck on PATH is not the pinned one"; exit 1; }
+          "$RUNNER_TEMP/actionlint" -color -shellcheck "$sc"
+      - name: Secret scan (gitleaks, pinned image, every commit of the PR including collab/, Q29)
+        env:
+          GITLEAKS_IMAGE: zricethezav/gitleaks:v8.24.0@sha256:2bcceac45179b3a91bff11a824d0fb952585b429e54fc928728b1d4d5c3e5176
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no commit range to scan"; exit 1; }
+          docker run --rm --network none \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            -v "$GITHUB_WORKSPACE:/repo:ro" "$GITLEAKS_IMAGE" \
+            git /repo --log-opts="$BASE_SHA..$HEAD_SHA" --redact --no-banner --exit-code 1
+      - name: SAST (Semgrep CE, pinned image, pinned p/java rules, no network in the scanner, Q51)
+        # The Semgrep Rules License forbids redistributing p/java, so the rules are fetched by sha256, not vendored.
+        # A new upstream ruleset fails this step until its digest is bumped through a protected change.
+        env:
+          SEMGREP_IMAGE: semgrep/semgrep:1.182.1@sha256:451b3d875c00dac7ed5db5293e584a07de11449a409c10b3c2d2652f429630b6
+          SEMGREP_RULES_URL: https://semgrep.dev/c/p/java
+          SEMGREP_RULES_SHA256: 7d0e2b65102ae62df716d06ed5cc66d095773416b880aec6771d1b6af70dab0e
+        run: |
+          install -d "$RUNNER_TEMP/semgrep"
+          curl -fsSL -o "$RUNNER_TEMP/semgrep/java.yml" "$SEMGREP_RULES_URL"
+          echo "$SEMGREP_RULES_SHA256  $RUNNER_TEMP/semgrep/java.yml" | sha256sum -c - || { echo "::error::semgrep ruleset digest changed: bump required"; exit 1; }
+          docker run --rm --network none \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/semgrep:/rules:ro" "$SEMGREP_IMAGE" \
+            semgrep scan --metrics off --disable-version-check --config /rules/java.yml --error app/src/main
+      - name: Semgrep ruleset ID manifest matches the pinned digest (Q59 option c)
+        # This catches an honest re-pin going stale, not a malicious one: both values are read
+        # from this PR's own checkout, so a PR could change them together (Q62). It is not meant
+        # to resist that - a PR touching .github/** or factory/** already needs the red-floor
+        # tier and human review, which is the actual control; this check never claimed to add more.
+        env:
+          SEMGREP_RULES_SHA256: 7d0e2b65102ae62df716d06ed5cc66d095773416b880aec6771d1b6af70dab0e
+        run: |
+          recorded=$(sed -n 's/^sha256: //p' factory/semgrep-p-java.ids)
+          [ "$recorded" = "$SEMGREP_RULES_SHA256" ] || {
+            echo "::error::factory/semgrep-p-java.ids records $recorded but the workflow pins $SEMGREP_RULES_SHA256 - whoever bumped the digest must regenerate this file's ID list in the same commit"
+            exit 1
+          }
+
+  scope:
+    # Which ACs this PR must pass (brief 007). Read from the base commit's approved specs and
+    # GitHub's merged-PR record, never from the PR head. Any error fails, so nothing shrinks the scope.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      kind: ${{ steps.scope.outputs.kind }}
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          path: base
+          sparse-checkout: docs/specs
+          persist-credentials: false
+      - id: scope
+        name: Scope from the base specs and merged work items; a spec PR checks its AC IDs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref || github.event.merge_group.head_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+        run: |
+          set -euo pipefail
+          branch="${HEAD_REF#refs/heads/}"
+          if [[ "$branch" =~ ^gh-readonly-queue/.+/pr-([0-9]+)-[0-9a-f]+$ ]]; then
+            branch=$(gh pr view "${BASH_REMATCH[1]}" -R "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)
+          fi
+          gh issue list -R "$GITHUB_REPOSITORY" --label work-item --state all --limit 1000 --json number,title > "$RUNNER_TEMP/issues.json"
+          gh pr list -R "$GITHUB_REPOSITORY" --state merged --base "${BASE_REF#refs/heads/}" --limit 1000 \
+            --json number,headRefName,isCrossRepository > "$RUNNER_TEMP/merged.json"
+          for f in issues merged; do
+            [ "$(jq length "$RUNNER_TEMP/$f.json")" -lt 1000 ] || { echo "::error::$f list hit the 1000 limit; scope would be incomplete"; exit 1; }
+          done
+          python3 tools/acceptance_scope.py --branch "$branch" --base-specs base/docs/specs --head-specs docs/specs \
+            --issues "$RUNNER_TEMP/issues.json" --merged "$RUNNER_TEMP/merged.json" | tee -a "$GITHUB_OUTPUT"
+
+  acceptance:
+    # Hidden scenarios live in a separate private repo. Only this job can read it, and it prints
+    # AC IDs with pass/fail only (ADR-006, brief 009). Every failure path fails the job (brief 007).
+    needs: [build-test, scope]
+    if: github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      SCOPE: ${{ needs.scope.outputs.scope }}
+    steps:
+      - name: No ACs in scope
+        if: env.SCOPE == ''
+        env:
+          KIND: ${{ needs.scope.outputs.kind }}
+        run: |
+          [ "$KIND" != wi ] || { echo "::error::a work-item PR must have ACs in scope"; exit 1; }
+          echo "no ACs in scope for this $KIND PR; no scenarios run"
+      - name: Fail clearly when the acceptance repo is not configured
+        if: env.SCOPE != ''
+        env:
+          ACCEPTANCE_REPO: ${{ vars.ACCEPTANCE_REPO }}
+          HAS_TOKEN: ${{ secrets.ACCEPTANCE_REPO_TOKEN != '' }}
+        run: |
+          [ -n "$ACCEPTANCE_REPO" ] || { echo "::error::set the repository variable ACCEPTANCE_REPO to the private scenario repo"; exit 1; }
+          [ "$HAS_TOKEN" = true ] || { echo "::error::set the secret ACCEPTANCE_REPO_TOKEN (read access to ACCEPTANCE_REPO)"; exit 1; }
+      - if: env.SCOPE != ''
+        uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - if: env.SCOPE != ''
+        uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21", cache: maven}
+      - if: env.SCOPE != ''
+        uses: actions/download-artifact@v4
+        with: {name: app-jar, path: app-jar}
+      - name: Block the app user's egress except loopback, and prove it (Q26, Q52)
+        if: env.SCOPE != ''
+        # An app that needs egress gets an explicit allow list through a protected change, never by removing this rule.
+        # Both probes use api.github.com, a host the job already depends on, so they differ only in the user.
+        run: |
+          sudo -n iptables -A OUTPUT -m owner --uid-owner nobody ! -o lo -j REJECT
+          sudo -n ip6tables -A OUTPUT -m owner --uid-owner nobody ! -o lo -j REJECT
+          curl -sS --max-time 10 -o /dev/null https://api.github.com || { echo "::error::egress probe inconclusive: the runner itself cannot reach https://api.github.com"; exit 1; }
+          if sudo -n -u nobody curl -sS --max-time 5 -o /dev/null https://api.github.com; then
+            echo "::error::the app user reached https://api.github.com; the egress block is not in force"
+            exit 1
+          fi
+          echo "egress probe: the runner reaches https://api.github.com and the app user cannot"
+      - name: Start the app under test as nobody, before the scenarios are on disk
+        if: env.SCOPE != ''
+        run: |
+          install -d -m 755 /tmp/aut
+          install -m 644 app-jar/*.jar /tmp/aut/app.jar
+          # The runner opens the log on purpose, so nobody never needs write access to /tmp/aut.
+          # shellcheck disable=SC2024
+          sudo -n -u nobody "$JAVA_HOME/bin/java" -jar /tmp/aut/app.jar --server.port=8080 > /tmp/aut/app.log 2>&1 &
+          if ! python3 tools/acceptance_run.py wait-healthy --url http://localhost:8080/actuator/health --timeout 90; then
+            echo "app log (written before any scenario was checked out):"
+            tail -n 50 /tmp/aut/app.log
+            exit 1
+          fi
+      - if: env.SCOPE != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ACCEPTANCE_REPO }}
+          token: ${{ secrets.ACCEPTANCE_REPO_TOKEN }}
+          persist-credentials: false
+          path: acceptance
+      - name: Hide the scenarios and their log from the app user
+        if: env.SCOPE != ''
+        run: |
+          chmod 700 acceptance
+          install -d -m 700 "$RUNNER_TEMP/private"
+          seen=$(sudo -n -u nobody sh -c 'if test -r "$1"; then echo readable; else echo hidden; fi' _ "$GITHUB_WORKSPACE/acceptance/pom.xml")
+          [ "$seen" = hidden ] || { echo "::error::the app user can read acceptance/ (or the check could not run)"; exit 1; }
+      - name: Run the scenarios in scope, report AC IDs only
+        if: env.SCOPE != ''
+        run: python3 tools/acceptance_run.py run --pom acceptance/pom.xml --scope "$SCOPE" --app-url http://localhost:8080 --log "$RUNNER_TEMP/private/acceptance.log"
+
+  required:
+    # Single aggregate check: branch protection requires only this one.
+    if: always()
+    needs: [build-test, static, scope, acceptance]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          BUILD_TEST: ${{ needs.build-test.result }}
+          STATIC: ${{ needs.static.result }}
+          SCOPE: ${{ needs.scope.result }}
+          ACCEPTANCE: ${{ needs.acceptance.result }}
+        run: |
+          for r in "$BUILD_TEST" "$STATIC" "$SCOPE" "$ACCEPTANCE"; do
+            [ "$r" = "success" ] || { echo "a required check did not pass: $r"; exit 1; }
+          done

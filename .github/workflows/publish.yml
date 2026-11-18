@@ -1,0 +1,100 @@
+# The only place the factory pushes or opens PRs, with the factory-bot App token so the
+# pull_request / workflow_run chain fires. Agent jobs hand over a patch artifact and nothing else.
+name: publish
+on:
+  workflow_call:
+    inputs:
+      role: {type: string, required: true}
+      issue: {type: string, required: true}
+      round: {type: string, required: false, default: "0"}
+      base_sha: {type: string, required: true}
+      client_id: {type: string, required: true}
+      tester_model: {type: string, required: false, default: ""}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: {required: false}
+    outputs:
+      head_sha:
+        value: ${{ jobs.publish.outputs.head_sha }}
+permissions: {}
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    outputs:
+      head_sha: ${{ steps.apply.outputs.head_sha }}
+    steps:
+      - name: Require the factory-bot App (never fall back to GITHUB_TOKEN)
+        env:
+          CLIENT_ID: ${{ inputs.client_id }}
+          HAS_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ "$HAS_KEY" != "true" ]; then
+            echo "::error::variable FACTORY_APP_CLIENT_ID or secret FACTORY_APP_PRIVATE_KEY is not set. publish does not fall back to GITHUB_TOKEN (brief 004, QUESTIONS Q3)."
+            exit 1
+          fi
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_sha }}
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      # base_sha is an agent branch tip from round 1 on, so its tools/ is not trusted.
+      # github.workflow_sha is the caller workflow's commit. publish is only called locally
+      # (./.github/workflows/publish.yml), which GitHub loads from that same commit, so the guard
+      # is as trusted as the workflow. job.workflow_sha would also cover cross-repo callers, but
+      # actionlint 1.7.12 does not know it yet; switch when actionlint does.
+      - name: Take the guard tools from this workflow's own commit, never from the branch
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::github.workflow_sha is not a commit id: '$WORKFLOW_SHA'"; exit 1; }
+          git cat-file -e "$WORKFLOW_SHA^{commit}" 2>/dev/null || git fetch -q --no-tags origin "$WORKFLOW_SHA"
+          mkdir -p "$RUNNER_TEMP/trusted"
+          for f in publish.py check_paths.py check_tier.py requirements.txt; do
+            git show "$WORKFLOW_SHA:tools/$f" > "$RUNNER_TEMP/trusted/$f"
+          done
+          pip install -q --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/trusted/requirements.txt"
+      - uses: actions/download-artifact@v4
+        with:
+          name: patch-${{ inputs.role }}
+          path: ${{ runner.temp }}/patch
+      - id: apply
+        name: Apply, guard and commit the patch
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ROLE: ${{ inputs.role }}
+          ISSUE: ${{ inputs.issue }}
+          ROUND: ${{ inputs.round }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          TESTER_MODEL: ${{ inputs.tester_model }}
+        run: |
+          [[ "$ISSUE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::issue must be a number without leading zeros"; exit 1; }
+          ISSUE_TITLE=$(gh issue view "$ISSUE" --json title -q .title)
+          export ISSUE_TITLE
+          python "$RUNNER_TEMP/trusted/publish.py" --role "$ROLE" --issue "$ISSUE" --round "$ROUND" \
+            --base-sha "$BASE_SHA" --patch "$RUNNER_TEMP/patch/changes.patch" \
+            --trusted "$RUNNER_TEMP/trusted" --pr-dir "$RUNNER_TEMP/pr" --tester-model "$TESTER_MODEL"
+      - name: Push and open or update the PR (factory-bot App token)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH: ${{ steps.apply.outputs.branch }}
+          OPEN_PR: ${{ steps.apply.outputs.open_pr }}
+        run: |
+          git push origin "HEAD:refs/heads/$BRANCH"
+          [ "$OPEN_PR" = "true" ] || exit 0
+          add=(); create=()
+          while IFS= read -r l; do [ -n "$l" ] && add+=(--add-label "$l") && create+=(--label "$l"); done < "$RUNNER_TEMP/pr/labels"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" "${add[@]}"
+          else
+            gh pr create --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr/title")" --body-file "$RUNNER_TEMP/pr/body.md" "${create[@]}"
+          fi

@@ -1,0 +1,52 @@
+# Model routing per family (brief 003, ANSWERS Q1 and Q22; reviewer families from brief 020).
+# One pinned model per family: exact versioned names, never an alias or a -preview model. Exception: deepseek (see there).
+# tools/review.py reads this file; tools/check_secrets_env.py lists the same secrets per role.
+# timeout_s: seconds per model call, a whole number from 1 to 900; 180 when absent.
+families:
+  anthropic:
+    # Subscription token: usable only inside claude-code-action, never for raw API calls.
+    model: claude-opus-5-5
+    via: claude-code-action
+    secret: CLAUDE_CODE_OAUTH_TOKEN
+  openai:
+    # Azure deployment `gpt-5` (gpt-5 2025-08-07, upgrade option NoAutoUpgrade).
+    model: azure/gpt-5
+    secret: AZURE_OPENAI_API_KEY
+    api_base_env: AZURE_OPENAI_ENDPOINT
+    api_version: "2024-10-21"
+  xai:
+    # Azure deployment `grok-4.7` (grok-4.7 version 1, upgrade option NoAutoUpgrade) on the same resource,
+    # called through its OpenAI-compatible v1 endpoint with the same resource key (brief 018).
+    model: openai/grok-4.7
+    secret: AZURE_OPENAI_API_KEY
+    api_base_env: AZURE_AI_V1_ENDPOINT
+    # One review of PR #29's 28 KB diff took 239 s (8140 tokens in, 489 out): past the default 180.
+    timeout_s: 480
+  deepseek:
+    # Azure deployment `DeepSeek-V4.1-Flash-1017` (version 2026-10-17, GlobalStandard, capacity 20 = 20 requests
+    # and 20k tokens per minute, upgrade option NoAutoUpgrade) on the same resource, v1 endpoint, same key (brief 020).
+    # Hosted by Microsoft in Azure; never api.deepseek.com. The catalog lists this model as Preview (Qun's choice).
+    model: openai/DeepSeek-V4.1-Flash-1017
+    secret: AZURE_OPENAI_API_KEY
+    api_base_env: AZURE_AI_V1_ENDPOINT
+    # One review of PR #29's 28 KB diff took 2.2 s (8042 in, 7 out, no findings); 180 s leaves room for long answers.
+    timeout_s: 180
+
+# Builder and tester come from different families on purpose.
+roles:
+  spec-writer: anthropic
+  builder: anthropic
+  tester: openai
+
+# Review depth per risk tier (brief 018). Rule: reviewer family != builder family.
+# Three families review independently; a finding raised by 2 or more is strong. A single-source
+# finding is verified by another answering family. Fewer than 2 answering reviewers: needs-human-review.
+review:
+  green:
+    reviewers: []                 # docs and comments only: no AI review
+  amber:
+    reviewers: [openai, xai, deepseek]
+  red:
+    reviewers: [openai, xai, deepseek]
+    human_review: true            # kept from Q22 until Qun decides after brief 015: red always gets needs-human-review
+  merge_model: openai             # may only group duplicates; never drops a finding or adds a vote

@@ -1,0 +1,11 @@
+role: verifier
+purpose: Confirm or reject a single-source finding by citing the exact lines
+scope: {repo: one, pr: one, finding: one}
+inputs: [finding, the cited code with surrounding context]
+outputs: [verdict confirmed|rejected + quoted lines]
+tools: [none: called by tools/review.py]
+denied: [write anything]
+data_class: internal
+model_tier: per risk tier; always another family than the reviewer that raised the finding
+owner: <team-name>
+version: 0.1.0

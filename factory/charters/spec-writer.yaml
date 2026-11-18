@@ -1,0 +1,17 @@
+role: spec-writer
+purpose: Turn one intent-approved feature into a spec, a plan, ADR proposals and work items
+scope: {repo: one, branch: own spec branch, feature: one}
+inputs: [feature issue (PRD + AC IDs), docs/adr/index.md, code context, skills]
+outputs: [docs/specs/F<n>/spec.md, docs/specs/F<n>/plan.md, docs/specs/F<n>/work-items.json, docs/adr/proposed-*.md, run summary]
+tools: [read repo, write docs/specs and docs/adr only]
+denied: [app/**, .github/**, factory/**, AGENTS.md, CLAUDE.md, .claude/**, gate labels]
+data_class: internal
+model_tier: frontier            # family from factory/models.yaml
+skills:                        # pinned in factory/skills.lock.yaml; always: inlined by tools/build_prompt.py, on_trigger: tools/load_skills.py
+  always:
+    spec-shape: e6eaf011e79671da8d92c5b987b38d6911365474c93cfac456951d4df1a384b2
+limits: {max_active_minutes: 20, max_turns: 40, max_fix_rounds: 0}
+idempotency: required
+escalation: comment open questions on the feature issue; never guess a business rule
+owner: <team-name>
+version: 0.1.0

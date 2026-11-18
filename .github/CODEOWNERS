@@ -1,0 +1,13 @@
+# Merge approvers per path. Personal account: no teams, so the single maintainer owns every path.
+*                         @Qunfong
+# Merging a spec PR = plan gate.
+/docs/specs/              @Qunfong
+/docs/adr/                @Qunfong
+/app/src/main/java/**/billing/   @Qunfong
+/app/src/main/java/**/security/  @Qunfong
+/.github/                 @Qunfong
+/factory/                 @Qunfong
+/tools/                   @Qunfong
+/AGENTS.md                @Qunfong
+/CLAUDE.md                @Qunfong
+/.claude/                 @Qunfong

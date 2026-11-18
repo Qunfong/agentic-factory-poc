@@ -1,0 +1,161 @@
+import os, pathlib, subprocess, sys, tempfile, time, unittest
+
+TOOLS = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(TOOLS))
+import publish  # noqa: E402
+
+
+def git(*args):
+    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+class PublishTest(unittest.TestCase):
+    def setUp(self):
+        self.old_cwd = os.getcwd()
+        self.tmp = tempfile.TemporaryDirectory()
+        os.chdir(self.tmp.name)
+        git("init", "-q")
+        git("config", "core.autocrlf", "false")
+        git("config", "user.name", "t")
+        git("config", "user.email", "t@example.com")
+        for f in ("docs/index.md", "app/src/main/A.java", "app/src/test/ATest.java", "factory/x.yaml"):
+            self.write(f, "base\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        self.base = git("rev-parse", "HEAD")
+        self.patch = pathlib.Path(self.tmp.name, "..", f"{pathlib.Path(self.tmp.name).name}.patch").resolve()
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        self.patch.unlink(missing_ok=True)
+        self.tmp.cleanup()
+
+    def write(self, path, text):
+        p = pathlib.Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, newline="\n")
+
+    def agent_patch(self, edit):
+        """Do what an agent job does: change the tree, export a binary diff, leave the tree clean."""
+        edit()
+        git("add", "-A")
+        self.patch.write_bytes(subprocess.run(["git", "diff", "--cached", "--binary", self.base],
+                                              capture_output=True, check=True).stdout)
+        git("reset", "-q", "--hard", self.base)
+        git("clean", "-qfdx")
+
+    def run_publish(self, role, base=None, issue="7"):
+        return publish.publish(role, issue, "1", base or self.base, str(self.patch), str(TOOLS), "gpt-x", "42")
+
+    def test_spec_writer_change_becomes_one_bot_commit_on_spec_branch(self):
+        self.agent_patch(lambda: self.write("docs/specs/F7/spec.md", "spec\n"))
+        self.assertEqual(self.run_publish("spec-writer")[1], "spec/F7")
+        self.assertEqual(git("log", "-1", "--format=%an|%s"), "factory-bot|spec: F7")
+        self.assertIn("Factory-Run: 42", git("log", "-1", "--format=%B"))
+
+    def test_spec_writer_outside_docs_is_rejected(self):
+        self.agent_patch(lambda: self.write("app/src/main/A.java", "evil\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("spec-writer")
+
+    def test_spec_writer_may_write_only_its_charter_paths(self):
+        self.agent_patch(lambda: (self.write("docs/specs/F7/plan.md", "p\n"),
+                                  self.write("docs/adr/proposed-cache.md", "a\n")))
+        self.assertEqual(self.run_publish("spec-writer")[1], "spec/F7")
+        for path in ("docs/specs/F8/spec.md", "docs/adr/accepted-cache.md", "docs/adr/proposed-x/y.md",
+                     "docs/notes.md", "docs/specs/F7.md"):
+            git("reset", "-q", "--hard", self.base)
+            self.agent_patch(lambda: self.write(path, "x\n"))
+            with self.assertRaisesRegex(publish.Rejected, "path guard", msg=path):
+                self.run_publish("spec-writer")
+
+    def test_a_patch_that_rewrites_the_guard_is_still_guarded(self):
+        def disable_guard():
+            self.write("tools/check_paths.py", "import sys; sys.exit(0)\n")
+            self.write("app/src/main/A.java", "new\n")
+        self.agent_patch(disable_guard)
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder")
+
+    def test_builder_may_not_delete_files(self):
+        self.agent_patch(lambda: os.remove("app/src/main/A.java"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder")
+
+    def test_tester_may_add_but_not_change_tests(self):
+        self.agent_patch(lambda: self.write("app/src/test/NewTest.java", "t\n"))
+        self.assertEqual(self.run_publish("tester")[1], "wi-7")
+        self.assertIn("Assisted-by: litellm:gpt-x", git("log", "-1", "--format=%B"))
+        git("reset", "-q", "--hard", self.base)
+        self.agent_patch(lambda: self.write("app/src/test/ATest.java", "weakened\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("tester")
+
+    def test_builder_may_not_touch_tests(self):
+        self.agent_patch(lambda: self.write("app/src/test/ATest.java", "weakened\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder")
+
+    def test_builder_rename_out_of_main_is_rejected(self):
+        self.agent_patch(lambda: git("mv", "app/src/main/A.java", "factory/A.java"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder")
+
+    def test_a_role_without_changes_is_rejected(self):
+        self.agent_patch(lambda: None)
+        for role in ("tester", "builder"):
+            with self.assertRaisesRegex(publish.Rejected, "no changes"):
+                self.run_publish(role)
+
+    def test_tester_may_not_swap_a_test_for_a_symlink(self):
+        # A real symlink on disk, not just an index entry: agent_patch's own `git add -A` (after
+        # edit()) reconciles the index against the working tree, so a symlink staged only via
+        # `update-index --cacheinfo` with an unchanged regular file underneath gets silently
+        # reverted on a symlink-capable filesystem (Audit round 2, A2 - this was a test bug, not
+        # a guard bug: check_paths.py catches a real type-change fine, see GuardTest.test_type_change_fails
+        # and test_filesystem_symlink_fails in test_check_paths.py).
+        def swap():
+            self.write("app/src/test/Empty.java", "")
+            os.remove("app/src/test/ATest.java")
+            try:
+                os.symlink("Empty.java", "app/src/test/ATest.java")
+            except OSError as e:
+                self.skipTest(f"cannot create symlinks here: {e}")
+        self.agent_patch(swap)
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("tester")
+
+    def test_rerun_rebuilds_the_same_commit(self):
+        self.agent_patch(lambda: self.write("app/src/main/B.java", "b\n"))
+        self.run_publish("builder")
+        first = git("rev-parse", "HEAD")
+        git("reset", "-q", "--hard", self.base)
+        time.sleep(1.1)
+        self.run_publish("builder")
+        self.assertEqual(git("rev-parse", "HEAD"), first)
+
+    def test_patch_that_does_not_apply_to_base_is_rejected(self):
+        self.agent_patch(lambda: self.write("app/src/main/A.java", "new\n"))
+        self.write("app/src/main/A.java", "moved on\n")
+        git("commit", "-qam", "someone else")
+        with self.assertRaisesRegex(publish.Rejected, "does not apply"):
+            self.run_publish("builder", base=git("rev-parse", "HEAD"))
+
+    def test_base_sha_must_be_the_checked_out_commit(self):
+        self.agent_patch(lambda: self.write("app/src/main/A.java", "new\n"))
+        with self.assertRaisesRegex(publish.Rejected, "base sha"):
+            self.run_publish("builder", base="0" * 40)
+
+    def test_inputs_are_parsed_at_the_boundary(self):
+        self.agent_patch(lambda: None)
+        with self.assertRaisesRegex(publish.Rejected, "unknown role"):
+            self.run_publish("reviewer")
+        with self.assertRaisesRegex(publish.Rejected, "decimal"):
+            self.run_publish("builder", issue="7;rm -rf /")
+        for issue in ("007", "0"):
+            with self.assertRaisesRegex(publish.Rejected, "leading zeros"):
+                self.run_publish("builder", issue=issue)
+
+
+if __name__ == "__main__":
+    unittest.main()
