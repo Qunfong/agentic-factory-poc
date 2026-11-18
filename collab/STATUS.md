@@ -348,3 +348,23 @@ Checking collab again after #46 merged turned up a second Cowork re-verification
 - **N1 (TOCTOU between check and read)** — accepted as negligible, per Cowork's own reasoning (single-process job, no concurrent builder). No action.
 - Verified: `python tools/check_workflow_policy.py` → 0 violations; `python -m pytest tools/tests/test_tester_loop.py` → 10 passed, 4 skipped (same 4 symlink skips as before; unrelated to this change). Did not add a new unit test for the `os.environ.pop` line itself - it sits inline in `main()` among file/argparse I/O that would need substantial mocking to isolate; the change is two lines and directly matches the pattern Cowork specified.
 - No control was loosened.
+
+## Public-flip snapshot executed (Claude Code, 2026-11-18, per ADR-0008 / ANSWERS Q7+Q9)
+All three of Qun's delegation preconditions held before touching anything: briefs 004-007, 009, 012 and 013 merged into `master` (confirmed by ancestor checks); the pre-publish scan ready to run; bootstrap `--apply` unchanged and still pending. Executed the Q7+Q9 steps that are Claude Code's to do:
+1. **Renamed** `Qunfong/agentic-factory-poc` → `Qunfong/agentic-factory-poc-archive` (`gh repo rename`). Stays private. This checkout's `origin` repointed to it.
+2. **Created** a new **private** repo `Qunfong/agentic-factory-poc` from a single root commit (`6f98c65`) holding `master`'s tree at `dad63b3` (166 files, via `git archive master | tar -x` into a clean directory, `git init`, one commit). Authored and committed as `Qunfong <11678460+Qunfong@users.noreply.github.com>` (the id+login noreply form, looked up via `gh api user`). Default branch `master`, confirmed via the API.
+3. **Ran the brief 009 pre-publish scan** (`tools/prepublish_check.sh`) on the new repo's actual checkout: **PASS** - `gitleaks: 0 finding(s)`, `deny-list: 1 name(s), 1 commit(s): 0 content, 0 path, 0 message or author, 0 ref name, 0 tag hit(s)`. (A dry run against this old repo's full history first, same deny-list, correctly FAILed with 37 content hits across `collab/ANSWERS.md` and `collab/briefs/009-...md` history - exactly the reason ANSWERS Q7+Q9 chose a fresh snapshot over a history rewrite. Deny-list file: one name, found by reading this repo's own history at `f3cc944` where brief 009 used it as its own illustrative example of what to redact - kept outside the repo as the brief requires, path not recorded here.)
+4. **Recreated repo variables** on the new repo (`gh variable set`, all 8 - the archive has more than Q7+Q9's two-item list from before briefs 018/020 added Grok/DeepSeek, so all were carried over for operational parity): `ACCEPTANCE_REPO`, `AZURE_AI_V1_ENDPOINT`, `AZURE_OPENAI_ENDPOINT`, `FACTORY_APP_CLIENT_ID`, `FACTORY_APP_ID`, `FACTORY_BOT_LOGIN`, `GATE_ROLES`, `WIP_LIMIT`.
+5. **Recreated the Azure key**: piped fresh from `az cognitiveservices account keys list -n ai-services-qun -g Qun-zijn-Speeltuin` straight into `gh secret set AZURE_OPENAI_API_KEY`, never through a file or stdout.
+6. **`GEMINI_API_KEY` not recreated** - confirmed unreferenced in any current workflow (grep over `.github/workflows/*.yml`), consistent with ANSWERS Q20's "delete after the first green run without Gemini." Not carried over.
+
+**For Qun only, before any factory run on the new repo** (none of these are things I can do):
+- Add the new repo to the `agentic-factory-bot-qunfong` App's installation.
+- Generate a new App private key (GitHub has no API for this) and `gh secret set FACTORY_APP_PRIVATE_KEY --repo Qunfong/agentic-factory-poc`.
+- `claude setup-token` (browser login) for a fresh `CLAUDE_CODE_OAUTH_TOKEN`, then `gh secret set` it on the new repo.
+- **New, not in the original Q7+Q9 list**: `ACCEPTANCE_REPO_TOKEN` (read access to `Qunfong/meter-acceptance`) exists on the archive but its *value* can't be read back via the API - I can't regenerate it myself. Issue or reuse that token and `gh secret set ACCEPTANCE_REPO_TOKEN --repo Qunfong/agentic-factory-poc`.
+
+**Not done, and not mine to do, per Q7+Q9's own text** ("Qun flips the new repo to public himself, and only after that does 008 `--apply` run"):
+- Flipping `Qunfong/agentic-factory-poc`'s visibility to public.
+- Running bootstrap `--apply` (branch protection rulesets, fork-PR approval, private vulnerability reporting, Discussions off) - only after the flip.
+- Re-pointing this local checkout and any CI references at the new repo once Qun confirms it's ready (this STATUS entry and the collab files themselves currently live only in the archive and the new repo's single snapshot commit; `collab/` on the new repo will need its own update once work resumes there).
