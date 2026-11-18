@@ -186,7 +186,12 @@ def run(system_prompt, model_args, repo_root, deadline, max_turns=MAX_TURNS):
         if time.monotonic() > deadline:
             raise InfraFailure("tester: wall-clock limit reached before the model finished")
         counts["turns"] += 1
-        resp = with_backoff(lambda: litellm.completion(messages=messages, tools=TOOLS, **model_args),
+        # _skip_mcp_handler: litellm.completion() otherwise always imports its MCP handler when
+        # tools is non-empty, even though we only use plain OpenAI-style function tools, no MCP -
+        # and the mcp package isn't in tools/requirements-review.txt (proven live, run 44342754745:
+        # ModuleNotFoundError: No module named 'mcp'). Confirmed in litellm 1.106.3's main.py.
+        resp = with_backoff(lambda: litellm.completion(messages=messages, tools=TOOLS, _skip_mcp_handler=True,
+                                                        **model_args),
                             model_args["model"])
         msg = msg_to_dict(resp.choices[0].message)
         messages.append(msg)
