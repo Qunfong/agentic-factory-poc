@@ -266,6 +266,17 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(policy.check(self.build_with(builder=job_env)),
                          ["30-build.yml:builder: job env reads a secret; put it on the agent step"])
 
+    def test_a_secret_value_is_allowed_on_a_step_before_the_agent_step(self):
+        # Cowork A2: a step that writes a model key to a file and exits before the agent step
+        # starts never shares a live process with it, so it's in the trusted zone, not the agent's.
+        write_key = {"env": {"K": "${{ secrets.AZURE_OPENAI_API_KEY }}"}, "run": "printf '%s' \"$K\" > key"}
+        tester = {"needs": "authorize", "permissions": {"contents": "read"}, "steps": [
+            LOAD, write_key, {"run": "python3 tools/tester_loop.py"}]}
+        self.assertEqual(policy.check(self.build_with(tester=tester)), [])
+        after = {**tester, "steps": tester["steps"] + [write_key]}
+        self.assertEqual(policy.check(self.build_with(tester=after)),
+                         ["30-build.yml:tester: step 4 reads a secret value outside the agent step"])
+
     def test_tools_after_agent_code_come_from_workflow_sha(self):
         builder = NEW["30-build.yml"]["jobs"]["builder"]
         in_job = {**builder, "steps": builder["steps"] + [{"run": "python3 tools/run_record.py --role builder"}]}

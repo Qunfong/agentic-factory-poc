@@ -98,15 +98,25 @@ jobs:
       - name: Install the hash-pinned tester-loop dependencies (litellm, same pin as 50-review)
         run: |
           pip install -q --require-hashes --only-binary=:all: -r tools/requirements-review.txt
-      - name: Tester (Azure OpenAI gpt-5 via a quiet LiteLLM tool loop; brief 013)
+      - name: Write the model key to a runner-local file, then exit (Cowork A2)
+        # This step's own process ends, and only then does the tester step start: the key never
+        # reaches a process that outlives this step, so /proc/<pid>/environ of anything running
+        # while mvn runs never held it. Never pass the key as env: on the tester step itself.
         env:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          KEY_FILE: ${{ runner.temp }}/azure-openai-key
+        run: |
+          umask 077
+          printf '%s' "$AZURE_OPENAI_API_KEY" > "$KEY_FILE"
+      - name: Tester (Azure OpenAI gpt-5 via a quiet LiteLLM tool loop; brief 013)
+        env:
+          AZURE_OPENAI_KEY_FILE: ${{ runner.temp }}/azure-openai-key
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           PROMPT_FILE: ${{ runner.temp }}/wi-input/tester.md
           TRANSCRIPT_FILE: ${{ runner.temp }}/out/tester-transcript.json
         run: |
           mkdir -p "$RUNNER_TEMP/out"
-          python3 tools/tester_loop.py --prompt-file "$PROMPT_FILE" --charter factory/charters/tester.yaml --out "$TRANSCRIPT_FILE"
+          python3 tools/tester_loop.py --prompt-file "$PROMPT_FILE" --charter factory/charters/tester.yaml --out "$TRANSCRIPT_FILE" --key-file "$AZURE_OPENAI_KEY_FILE"
       - uses: actions/upload-artifact@v4
         with:
           name: run-record-tester-transcript-${{ github.run_id }}
