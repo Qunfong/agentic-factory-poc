@@ -111,6 +111,17 @@ class ResolveContainedTest(unittest.TestCase):
         self.assertNotIn("app/src/test/java/Leak.java", found)
 
 
+class LoadKeyFileTest(unittest.TestCase):
+    def test_reads_the_key_into_os_environ_and_deletes_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            key_path = pathlib.Path(d) / "key"
+            key_path.write_text("super-secret\n")
+            self.addCleanup(os.environ.pop, "AZURE_OPENAI_API_KEY", None)
+            tester_loop.load_key_file(str(key_path), "AZURE_OPENAI_API_KEY")
+            self.assertEqual(os.environ["AZURE_OPENAI_API_KEY"], "super-secret")
+            self.assertFalse(key_path.exists())
+
+
 class RunMvnEnvTest(unittest.TestCase):
     def test_the_model_api_key_is_removed_from_run_mvns_environment(self):
         captured = {}

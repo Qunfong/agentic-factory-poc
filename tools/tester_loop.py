@@ -186,12 +186,7 @@ def run(system_prompt, model_args, repo_root, deadline, max_turns=MAX_TURNS):
         if time.monotonic() > deadline:
             raise InfraFailure("tester: wall-clock limit reached before the model finished")
         counts["turns"] += 1
-        # _skip_mcp_handler: litellm.completion() otherwise always imports its MCP handler when
-        # tools is non-empty, even though we only use plain OpenAI-style function tools, no MCP -
-        # and the mcp package isn't in tools/requirements-review.txt (proven live, run 44342754745:
-        # ModuleNotFoundError: No module named 'mcp'). Confirmed in litellm 1.106.3's main.py.
-        resp = with_backoff(lambda: litellm.completion(messages=messages, tools=TOOLS, _skip_mcp_handler=True,
-                                                        **model_args),
+        resp = with_backoff(lambda: litellm.completion(messages=messages, tools=TOOLS, **model_args),
                             model_args["model"])
         msg = msg_to_dict(resp.choices[0].message)
         messages.append(msg)
@@ -219,6 +214,19 @@ def run(system_prompt, model_args, repo_root, deadline, max_turns=MAX_TURNS):
     raise InfraFailure(f"tester: no result after {max_turns} turns")
 
 
+def load_key_file(key_file, secret_name):
+    """Read a model key from a file into os.environ[secret_name], then delete the file.
+
+    The key must never reach this process via a workflow env: (Cowork A2): /proc/<pid>/environ
+    reflects a process's environment as it was at exec(), for its whole life, no matter what
+    os.environ is changed to afterward - so the only process ever exec'd with the key in its own
+    env: must be an earlier, already-exited one. That process writes the key here instead.
+    """
+    key_path = pathlib.Path(key_file)
+    os.environ[secret_name] = key_path.read_text(encoding="utf-8").strip()
+    key_path.unlink()
+
+
 def main(argv=None):
     import yaml
     p = argparse.ArgumentParser()
@@ -227,6 +235,9 @@ def main(argv=None):
     p.add_argument("--models-file", default="factory/models.yaml")
     p.add_argument("--out", required=True)
     p.add_argument("--repo-root", default=".")
+    p.add_argument("--key-file", help="file holding the model key; read once, then deleted. "
+                                      "Required unless the key is already in the environment "
+                                      "(only for local testing - never pass the key via env: in CI).")
     a = p.parse_args(argv)
 
     repo_root = pathlib.Path(a.repo_root).resolve()
@@ -234,10 +245,9 @@ def main(argv=None):
     max_minutes = (charter.get("limits") or {}).get("max_active_minutes", 20)
     models = yaml.safe_load(pathlib.Path(a.models_file).read_text(encoding="utf-8"))
     family = models["families"][models["roles"]["tester"]]
+    if a.key_file:
+        load_key_file(a.key_file, family["secret"])
     model_args = completion_args(family, os.environ)
-    # Cowork A2: run_mvn already excludes this from the child's own env, but a child running as
-    # the same Linux user could still read this process's /proc/<pid>/environ. The key is captured
-    # into model_args above; nothing after this line needs it in os.environ.
     os.environ.pop(family["secret"], None)
     system_prompt = pathlib.Path(a.prompt_file).read_text(encoding="utf-8")
 

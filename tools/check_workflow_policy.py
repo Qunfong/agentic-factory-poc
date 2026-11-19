@@ -241,13 +241,20 @@ def model_jobs_need_authorize(workflows):
 
 @rule
 def agent_secrets_only_on_the_agent_step(workflows):
-    # Steps around the agent run code the agent can reach or wrote; they may learn only whether a secret is set (brief 003).
+    # Steps after the agent step run code the agent can reach or wrote; they may learn only
+    # whether a secret is set (brief 003). A step before it runs only this job's own trusted
+    # checkout, since no agent code has executed yet in this job - for example a step that writes
+    # a model key to a short-lived file and exits before the agent step starts, so the key never
+    # reaches the agent step's own process env (Cowork A2: /proc/<pid>/environ reflects a
+    # process's env at exec() time for its whole life, so the key must never be there at all).
     out = []
     for name, job_id, job in agent_jobs(workflows):
         if secret_values(job.get("env")):
             out.append(f"{name}:{job_id}: job env reads a secret; put it on the agent step")
-        for i, s in enumerate(steps(job)):
-            if not is_agent_step(s) and secret_values(s):
+        st = steps(job)
+        agent_at = next((i for i, s in enumerate(st) if is_agent_step(s)), len(st))
+        for i, s in enumerate(st):
+            if i > agent_at and not is_agent_step(s) and secret_values(s):
                 out.append(f"{name}:{job_id}: step {i + 1} reads a secret value outside the agent step")
     return out
 
