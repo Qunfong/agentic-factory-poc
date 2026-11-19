@@ -146,6 +146,39 @@ class PublishTest(unittest.TestCase):
         with self.assertRaisesRegex(publish.Rejected, "base sha"):
             self.run_publish("builder", base="0" * 40)
 
+    def test_builder_publish_deletes_a_shadowed_test_stub(self):
+        # Own incident, F7 WI-1: Maven puts test-classes ahead of classes, so a tester's
+        # compile-time stub left behind silently shadows the real implementation (404s, not a
+        # build failure) once the builder adds the real class at the same path.
+        self.write("app/src/test/com/Stub.java", "// factory-test-stub\npublic class Stub {}\n")
+        git("add", "-A")
+        git("commit", "-qam", "tester stub")
+        self.base = git("rev-parse", "HEAD")
+        self.agent_patch(lambda: self.write("app/src/main/com/Stub.java", "public class Stub {}\n"))
+        self.run_publish("builder")
+        files = git("ls-tree", "-r", "--name-only", "HEAD")
+        self.assertNotIn("app/src/test/com/Stub.java", files)
+        self.assertIn("app/src/main/com/Stub.java", files)
+
+    def test_builder_publish_never_deletes_a_real_test_with_the_same_name(self):
+        self.write("app/src/test/com/Stub.java", "public class Stub { /* a real test, no marker */ }\n")
+        git("add", "-A")
+        git("commit", "-qam", "real test, same name as a future main class")
+        self.base = git("rev-parse", "HEAD")
+        self.agent_patch(lambda: self.write("app/src/main/com/Stub.java", "public class Stub {}\n"))
+        self.run_publish("builder")
+        self.assertIn("app/src/test/com/Stub.java", git("ls-tree", "-r", "--name-only", "HEAD"))
+
+    def test_builder_publish_leaves_an_unmatched_stub_alone(self):
+        # The stub exists, but this patch doesn't add the main file it stands in for.
+        self.write("app/src/test/com/Stub.java", "// factory-test-stub\npublic class Stub {}\n")
+        git("add", "-A")
+        git("commit", "-qam", "tester stub, unrelated to this patch")
+        self.base = git("rev-parse", "HEAD")
+        self.agent_patch(lambda: self.write("app/src/main/B2.java", "b2\n"))
+        self.run_publish("builder")
+        self.assertIn("app/src/test/com/Stub.java", git("ls-tree", "-r", "--name-only", "HEAD"))
+
     def test_inputs_are_parsed_at_the_boundary(self):
         self.agent_patch(lambda: None)
         with self.assertRaisesRegex(publish.Rejected, "unknown role"):
