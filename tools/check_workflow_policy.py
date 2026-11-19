@@ -239,14 +239,28 @@ def model_jobs_need_authorize(workflows):
     return out
 
 
+KEY_WRITE_LINE = re.compile(r"^(umask\s+[0-7]{3,4}|printf\s+'%s'\s+\"\$\w+\"\s*>\s*\"\$\w+\")$")
+
+
+def is_key_write_only(step):
+    """Cowork (A2 re-verification, round 11): the pre-agent-step exception must not be "any step
+    before the agent step", only a step that does nothing but write a secret to a file - every
+    line of its run: must be one of umask or printf-to-a-file, nothing else (no mvn, no network,
+    no python). Narrower than the trust boundary alone, so a future unrelated pre-agent step
+    can't accidentally inherit this exception just by running early in the same job."""
+    lines = [l.strip() for l in str(step.get("run", "")).splitlines() if l.strip()]
+    return bool(lines) and all(KEY_WRITE_LINE.match(line) for line in lines)
+
+
 @rule
 def agent_secrets_only_on_the_agent_step(workflows):
     # Steps after the agent step run code the agent can reach or wrote; they may learn only
-    # whether a secret is set (brief 003). A step before it runs only this job's own trusted
-    # checkout, since no agent code has executed yet in this job - for example a step that writes
-    # a model key to a short-lived file and exits before the agent step starts, so the key never
-    # reaches the agent step's own process env (Cowork A2: /proc/<pid>/environ reflects a
-    # process's env at exec() time for its whole life, so the key must never be there at all).
+    # whether a secret is set (brief 003). The one narrow exception before it: a step that does
+    # nothing but write a model key to a short-lived file and exits before the agent step starts,
+    # so the key never reaches the agent step's own process env (Cowork A2: /proc/<pid>/environ
+    # reflects a process's env at exec() time for its whole life, so the key must never be there
+    # at all). Any other pre-agent step reading a secret is still a violation - this is not "the
+    # whole pre-agent zone is trusted", only that one specific, pattern-matched step shape.
     out = []
     for name, job_id, job in agent_jobs(workflows):
         if secret_values(job.get("env")):
@@ -254,7 +268,9 @@ def agent_secrets_only_on_the_agent_step(workflows):
         st = steps(job)
         agent_at = next((i for i, s in enumerate(st) if is_agent_step(s)), len(st))
         for i, s in enumerate(st):
-            if i > agent_at and not is_agent_step(s) and secret_values(s):
+            if i == agent_at or not secret_values(s):
+                continue
+            if i > agent_at or not is_key_write_only(s):
                 out.append(f"{name}:{job_id}: step {i + 1} reads a secret value outside the agent step")
     return out
 
