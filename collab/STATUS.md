@@ -411,3 +411,8 @@ Checking collab turned up a real B-severity finding: Cowork's own earlier sugges
 - `30-build.yml` still has no egress block for the tester job (round 3, still open) - unchanged, separate defence in depth, not a precondition for this fix; this fix alone closes the specific `/proc/<pid>/environ` leak A2 described.
 - Verified: `python tools/check_workflow_policy.py` → 0 violations; `python -m pytest tools/tests/test_tester_loop.py tools/tests/test_check_workflow_policy.py` → 44 passed, 4 skipped. Full suite run separately.
 - No control was loosened to make anything pass - the policy change only reclassifies a step that was already safe (before any agent code runs) as such; the actual secret-handling rule (never after the agent step) is unchanged and still enforced.
+
+## Discussions turned on, reversing ANSWERS Q2 point 5 (Qun, 2026-11-19)
+Qun asked for a place to track improvement ideas; weighed GitHub issues with a label (keeps the Q2 decision) against reopening Discussions, and chose to reopen it: `gh repo edit Qunfong/agentic-factory-poc --enable-discussions`, confirmed `has_discussions: true`.
+- This reverses a deliberate security decision (ANSWERS Q2 point 5, enforced by `tools/bootstrap.sh`'s `repo-settings.json` payload `{"has_discussions": false}`). **Re-running `bootstrap --apply` would silently turn it back off** - bootstrap.sh was not changed to make this configurable or to leave it alone. Flagging rather than fixing unasked: if bootstrap runs again, re-enable Discussions by hand afterward, or open a small PR to make the setting a flag first.
+- No other part of Q2 (fork PR approval, private vulnerability reporting, agent-start gating) was touched.
