@@ -9,6 +9,7 @@ Reference: *Agentic Software Factory – Logical Reference Architecture* (Archit
 - Do not weaken a control to make something pass (gates, path guards, secret scoping, branch protection).
 - Treat `factory/**` as factory config: propose changes, explain why.
 - When something is unknown (exact model names, plan limits), stop and ask instead of guessing.
+- **Open questions on a feature, spec or PR go as a comment on that issue/PR, and the work stays paused until a reply lands there** - not resolved by a quick chat confirmation. Check back on that issue/PR for the reply (same idea as the "check collab" habit for `collab/QUESTIONS.md`/`ANSWERS.md`, applied to spec and feature work too) rather than assuming an answer given only in chat.
 
 ## Skills to use
 These are for interactive sessions that work on the factory itself. Factory agents never load them; they get only the pinned skills their charter lists (`factory/charters/`, `tools/load_skills.py`).
