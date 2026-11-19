@@ -1,4 +1,4 @@
-import os, pathlib, sys, tempfile, unittest
+import os, pathlib, sys, tempfile, time, types, unittest
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLS))
@@ -109,6 +109,28 @@ class ResolveContainedTest(unittest.TestCase):
         found = tester_loop.list_files(self.root, "app/src/test")
         self.assertIn("app/src/test/java/Existing.java".replace("/", os.sep).replace(os.sep, "/"), found)
         self.assertNotIn("app/src/test/java/Leak.java", found)
+
+
+class RunPassesSkipMcpHandlerTest(unittest.TestCase):
+    """Regression test: run() silently lost _skip_mcp_handler=True once already (a stale local
+    copy overwrote the fix between PRs), reintroducing litellm's ModuleNotFoundError: No module
+    named 'mcp' on every live call. This asserts the kwarg reaches litellm.completion directly,
+    not just that the surrounding code "looks right"."""
+
+    def test_skip_mcp_handler_true_is_passed_to_litellm_completion(self):
+        captured = {}
+
+        def fake_completion(**kwargs):
+            captured.update(kwargs)
+            msg = types.SimpleNamespace(content="done", tool_calls=None,
+                                        model_dump=lambda exclude_none=True: {"role": "assistant", "content": "done"})
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)])
+
+        fake_litellm = types.SimpleNamespace(completion=fake_completion)
+        sys.modules["litellm"] = fake_litellm
+        self.addCleanup(sys.modules.pop, "litellm", None)
+        tester_loop.run("system prompt", {"model": "azure/gpt-5"}, pathlib.Path("."), time.monotonic() + 10)
+        self.assertIs(captured.get("_skip_mcp_handler"), True, captured)
 
 
 class LoadKeyFileTest(unittest.TestCase):
