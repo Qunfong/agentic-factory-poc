@@ -269,13 +269,30 @@ class PolicyTest(unittest.TestCase):
     def test_a_secret_value_is_allowed_on_a_step_before_the_agent_step(self):
         # Cowork A2: a step that writes a model key to a file and exits before the agent step
         # starts never shares a live process with it, so it's in the trusted zone, not the agent's.
-        write_key = {"env": {"K": "${{ secrets.AZURE_OPENAI_API_KEY }}"}, "run": "printf '%s' \"$K\" > key"}
+        write_key = {"env": {"K": "${{ secrets.AZURE_OPENAI_API_KEY }}"},
+                     "run": 'umask 077\nprintf \'%s\' "$K" > "$KEY_FILE"'}
         tester = {"needs": "authorize", "permissions": {"contents": "read"}, "steps": [
             LOAD, write_key, {"run": "python3 tools/tester_loop.py"}]}
         self.assertEqual(policy.check(self.build_with(tester=tester)), [])
         after = {**tester, "steps": tester["steps"] + [write_key]}
         self.assertEqual(policy.check(self.build_with(tester=after)),
                          ["30-build.yml:tester: step 4 reads a secret value outside the agent step"])
+
+    def test_the_pre_agent_exception_is_narrow_not_the_whole_trusted_zone(self):
+        # Cowork, round 11: "before the agent step" alone is too broad - only a step that does
+        # nothing but write the secret to a file qualifies, not any pre-agent step that happens to
+        # also touch a secret (e.g. one that also runs mvn or python with it in scope).
+        for bad_run in (
+            'printf \'%s\' "$K" > "$KEY_FILE"\npython3 tools/suspicious.py',
+            'mvn -B -q -f app/pom.xml test-compile',
+            'printf \'%s\' "$K" > "$KEY_FILE"\ncurl -s https://example.com',
+        ):
+            run_secret = {"env": {"K": "${{ secrets.AZURE_OPENAI_API_KEY }}"}, "run": bad_run}
+            tester = {"needs": "authorize", "permissions": {"contents": "read"}, "steps": [
+                LOAD, run_secret, {"run": "python3 tools/tester_loop.py"}]}
+            self.assertEqual(policy.check(self.build_with(tester=tester)),
+                             ["30-build.yml:tester: step 2 reads a secret value outside the agent step"],
+                             bad_run)
 
     def test_tools_after_agent_code_come_from_workflow_sha(self):
         builder = NEW["30-build.yml"]["jobs"]["builder"]
