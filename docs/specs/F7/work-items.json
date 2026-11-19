@@ -1,0 +1,47 @@
+[
+  {
+    "id": "WI-1",
+    "title": "POST /meters registers a meter by id and type; duplicate id 409, unknown type 400",
+    "ac_ids": ["AC-F7-1"],
+    "paths": [
+      "app/src/main/java/com/example/meter/MeterType.java",
+      "app/src/main/java/com/example/meter/Meter.java",
+      "app/src/main/java/com/example/meter/MeterService.java",
+      "app/src/main/java/com/example/meter/MeterController.java",
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/main/java/com/example/meter/MeterAlreadyRegisteredException.java",
+      "app/src/main/java/com/example/meter/UnknownMeterTypeException.java",
+      "app/src/test/java/com/example/meter/MeterRegistrationTest.java"
+    ],
+    "depends_on": []
+  },
+  {
+    "id": "WI-2",
+    "title": "Readings only for registered meters, carrying the meter type and unit; delete unchanged",
+    "ac_ids": ["AC-F7-2", "AC-F7-3", "AC-F7-4", "AC-F7-7"],
+    "paths": [
+      "app/src/main/java/com/example/meter/Reading.java",
+      "app/src/main/java/com/example/meter/ReadingRequest.java",
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/main/java/com/example/meter/MeterService.java",
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/main/java/com/example/meter/MeterNotFoundException.java",
+      "app/src/test/java/com/example/meter/ReadingMeterTypeTest.java",
+      "app/src/test/java/com/example/meter/ReadingControllerTest.java",
+      "app/src/test/java/com/example/meter/ReadingDeleteTest.java"
+    ],
+    "depends_on": ["WI-1"]
+  },
+  {
+    "id": "WI-3",
+    "title": "GET /summary returns per-type totals, filtered by type or for all six types",
+    "ac_ids": ["AC-F7-5", "AC-F7-6"],
+    "paths": [
+      "app/src/main/java/com/example/meter/SummaryController.java",
+      "app/src/main/java/com/example/meter/MeterService.java",
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/test/java/com/example/meter/SummaryTest.java"
+    ],
+    "depends_on": ["WI-2"]
+  }
+]
