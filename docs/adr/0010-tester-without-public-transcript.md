@@ -1,6 +1,6 @@
 # ADR-0010: The tester runs as a LiteLLM tool loop that writes no transcript to logs
 
-- **Status:** Accepted and built; AC3 live proof in progress (@Qunfong, ANSWERS Q28/Q37, 2026-11-12; brief 013 merged 2026-11-18, PR #45). `30-build.yml`'s tester step now runs `tools/tester_loop.py`; no `codex-action`, no transcript in the log. First live dispatch on the new public repo (run 44342754745, 2026-11-18) hit an infra bug (see Consequences) with zero model text in the log either way - the quiet design held under a real failure, not just the happy path. Fix applied; AC3's full pass (tests actually written) still needs a clean rerun.
+- **Status:** Accepted, built and proven (@Qunfong, ANSWERS Q28/Q37, 2026-11-12; brief 013 merged 2026-11-18, PR #45). `30-build.yml`'s tester step runs `tools/tester_loop.py`; no `codex-action`, no transcript in the log. AC3 proven live on [run 44493440107](https://github.com/Qunfong/agentic-factory-poc/actions/runs/44493440107) (2026-11-19): a canary string the prompt asked the model to repeat appears 3 times in the run-record transcript artifact and 0 times in the public job log; the tester wrote a real, correct test for AC-F16-1 (8 turns, 7 tool calls, 2 `mvn` runs, committed to `wi-2`). The first attempt ([run 44342754745](https://github.com/Qunfong/agentic-factory-poc/actions/runs/44342754745), 2026-11-18) hit an infra bug (see Consequences), itself proof the quiet design holds under a real failure too, not only the happy path.
 - **Date:** 2026-11-12
 - **Decision makers:** @Qunfong
 - **Confidence:** not stated
@@ -35,5 +35,4 @@ codex-action prints the tester's transcript, and Actions logs are public once th
 ## Re-evaluation Triggers
 
 - codex-action gains an option to keep its transcript out of the log.
-- AC3's live canary run passing cleanly (tests actually written, canary absent from the log).
 - litellm removes or renames `_skip_mcp_handler` in a future version - re-check this fix on any litellm version bump.
