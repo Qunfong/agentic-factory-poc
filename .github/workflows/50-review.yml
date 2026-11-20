@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
     outputs:
       required_passed: ${{ steps.required.outputs.passed }}
     steps:
@@ -23,13 +24,19 @@ jobs:
         # workflow_run's own .conclusion is "failure" whenever a PR's hidden-scenario job fails -
         # even when required (the real gate) passed. Query required's own job conclusion instead,
         # so review still runs on every PR that actually passes the real gate.
+        # Own review findings (PR #25, run 44711648476): needs actions: read on the job (added
+        # above) or the API call 403s; --paginate in case a workflow ever grows past one page of
+        # jobs; and fail loudly, not passed=false, when "required" isn't found at all - a lookup
+        # failure must never look identical to a real gating failure.
         id: required
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.name == "required") | .conclusion')
-          [ "$conclusion" = success ] && passed=true || passed=false
+          conclusions=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.name == "required") | .conclusion')
+          n=$(printf '%s\n' "$conclusions" | grep -c .)
+          [ "$n" -eq 1 ] || { echo "::error::expected exactly one 'required' job on run $RUN_ID, found $n"; exit 1; }
+          [ "$conclusions" = success ] && passed=true || passed=false
           echo "passed=$passed" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
