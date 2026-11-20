@@ -212,6 +212,13 @@ jobs:
           show_full_output: false
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # claude-code-action's own actor check is separate from tools/authorize.py: it refuses a
+          # run triggered by a bot actor by default. 25-dispatch/20-breakdown's auto-dispatch
+          # triggers this workflow as github-actions[bot] - already trusted by authorize.py's own
+          # gate (build_dispatchers_are_authorized requires an authorize check before any such
+          # dispatch), so trust it here too. First caught live: every prior green builder run was
+          # a human-triggered workflow_dispatch, never the real auto-dispatch path.
+          allowed_bots: "github-actions"
           prompt: "${{ format('Follow the instructions in the file {0}. Work item #{1}, fix round {2}.', format('{0}/wi-input/builder.md', runner.temp), inputs.issue, inputs.round) }}"
           claude_args: >-
             --model claude-opus-5-5 --max-turns 80
