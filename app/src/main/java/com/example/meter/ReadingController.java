@@ -19,6 +19,9 @@ public class ReadingController {
     public record Reading(@NotBlank String meterId, @NotNull Instant takenAt,
                           @NotNull @DecimalMin("0") BigDecimal kwh) {}
 
+    /** Total number of stored readings; never negative. */
+    public record ReadingCount(long count) {}
+
     private final List<Reading> readings = new CopyOnWriteArrayList<>();
 
     @PostMapping
@@ -31,6 +34,11 @@ public class ReadingController {
     @GetMapping
     public List<Reading> list(@RequestParam String meterId) {
         return readings.stream().filter(r -> r.meterId().equals(meterId)).toList();
+    }
+
+    @GetMapping("/count")
+    public ReadingCount count() {
+        return new ReadingCount(readings.size());
     }
 
     @DeleteMapping
