@@ -218,6 +218,11 @@ jobs:
 
   required:
     # Single aggregate check: branch protection requires only this one.
+    # Decision (Qun, 2026-11-20, first iteration): acceptance still runs and is waited on and
+    # reported here, but does not gate merge - writing a hidden scenario for every AC is too much
+    # overhead this early. The merge gate for now is a human-approved PR review (branch
+    # protection's own required review), not this check. Revisit once scenario authoring is cheap
+    # enough to keep up with real feature work.
     if: always()
     needs: [build-test, static, scope, acceptance]
     runs-on: ubuntu-latest
@@ -228,6 +233,7 @@ jobs:
           SCOPE: ${{ needs.scope.result }}
           ACCEPTANCE: ${{ needs.acceptance.result }}
         run: |
-          for r in "$BUILD_TEST" "$STATIC" "$SCOPE" "$ACCEPTANCE"; do
+          echo "acceptance (hidden scenarios): $ACCEPTANCE - informational only for now, see this job's comment"
+          for r in "$BUILD_TEST" "$STATIC" "$SCOPE"; do
             [ "$r" = "success" ] || { echo "a required check did not pass: $r"; exit 1; }
           done

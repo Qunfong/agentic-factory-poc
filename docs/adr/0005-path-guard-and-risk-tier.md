@@ -17,6 +17,7 @@ A guard that trusts the agent's own git state can be fooled. `**/*.md` scored `A
 
 - The guard stays simple and provable. Refactoring work items that delete files are slower (Q18). This is accepted for the POC.
 - The tier drives the review: green and amber get one AI review; red gets two families and a human (ADR-0003).
+- **One narrow, trusted exception, not a guard change** (2026-11-19, own incident on F7 WI-1): the tester may write a compile-time stub under `app/src/test/**` at the exact path the builder's real class will later occupy; Maven puts test-classes ahead of classes on the classpath, so a stub left behind silently shadows the real implementation (a 404 at runtime, not a build failure). `tools/publish.py`'s `remove_shadowed_stubs()` deletes exactly that file, as a trusted mechanical step *after* the builder's own guarded patch is validated - never by widening what the guard accepts from the agent, and never touching a file without the exact `// factory-test-stub` first line. `check_paths.py` itself is unchanged.
 
 ## Re-evaluation Triggers
 

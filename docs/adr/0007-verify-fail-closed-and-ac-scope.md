@@ -21,7 +21,9 @@ Agents must not see or overfit the acceptance scenarios. The repo goes public, s
 
 - `required` can't go green until the acceptance repo `meter-acceptance` and `ACCEPTANCE_REPO_TOKEN` exist (brief 012 addendum).
 - A reverted work item's ACs stay in scope until a spec PR retires them (Q25). This fails safe.
+- **`acceptance` no longer blocks merge (Qun, 2026-11-20, first iteration).** Writing a hidden scenario for every AC before any PR can merge was too much overhead this early - the factory was producing real work items faster than scenarios could be authored for them (F7 WI-1 was the first case: `acceptance` failed only because no scenario existed yet, correctly, but that's now the normal case, not the exception). `40-verify.yml`'s `required` job still `needs: acceptance` and still reports `needs.acceptance.result`, so it keeps running and verify still waits for it - but the job no longer fails `required` on that result. The merge gate for now is the human-approved PR review branch protection already requires (`factory-default-branch-review`), not this check. This is explicitly a first-iteration call, not a retraction of ADR-0007's reasoning (agents must not see or overfit the acceptance scenarios) - that part is unchanged, scenarios just aren't mandatory yet.
 
 ## Re-evaluation Triggers
 
 - An app needs outbound network: give it an explicit allow-list through a protected change.
+- Scenario authoring catches up with feature throughput, or a lighter-weight way to write them appears - make `acceptance` block merge again.
