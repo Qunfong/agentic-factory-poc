@@ -53,6 +53,22 @@ class PublishTest(unittest.TestCase):
         self.assertEqual(git("log", "-1", "--format=%an|%s"), "factory-bot|spec: F7")
         self.assertIn("Factory-Run: 42", git("log", "-1", "--format=%B"))
 
+    def test_spec_writer_pr_body_links_proposed_adrs(self):
+        self.agent_patch(lambda: (self.write("docs/specs/F7/spec.md", "spec\n"),
+                                  self.write("docs/adr/proposed-x.md", "adr\n")))
+        role, _ = self.run_publish("spec-writer")
+        out = pathlib.Path(self.tmp.name).parent / "pr-out"
+        publish.write_pr(role, str(TOOLS), out, "7", "F7 title", self.base)
+        body = (out / "body.md").read_text(encoding="utf-8")
+        self.assertIn("[proposed-x.md](docs/adr/proposed-x.md)", body)
+
+    def test_pr_body_has_no_adr_section_when_none_were_added(self):
+        self.agent_patch(lambda: self.write("docs/specs/F7/spec.md", "spec\n"))
+        role, _ = self.run_publish("spec-writer")
+        out = pathlib.Path(self.tmp.name).parent / "pr-out2"
+        publish.write_pr(role, str(TOOLS), out, "7", "F7 title", self.base)
+        self.assertNotIn("Proposed ADRs", (out / "body.md").read_text(encoding="utf-8"))
+
     def test_spec_writer_outside_docs_is_rejected(self):
         self.agent_patch(lambda: self.write("app/src/main/A.java", "evil\n"))
         with self.assertRaisesRegex(publish.Rejected, "path guard"):
