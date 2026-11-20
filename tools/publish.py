@@ -148,15 +148,28 @@ def publish(role_name, issue, round_, base_sha, patch, trusted, tester_model="",
     return role, branch
 
 
-def write_pr(role, trusted, out, issue, title):
+def proposed_adr_links(base_sha):
+    """Every docs/adr/proposed-*.md this commit added since base_sha, as markdown links - so a
+    reviewer sees them in the PR description itself, not only by opening the diff."""
+    added = git("diff", "--name-status", "--no-renames", base_sha, "HEAD").stdout.splitlines()
+    paths = sorted(line.split("\t", 1)[1] for line in added
+                   if line.startswith("A\t") and line.split("\t", 1)[1].startswith("docs/adr/proposed-"))
+    return [f"- [{pathlib.Path(p).name}]({p})" for p in paths]
+
+
+def write_pr(role, trusted, out, issue, title, base_sha=""):
     out.mkdir(parents=True, exist_ok=True)
     labels = list(role.labels)
     if role.tier_label:
         tier = subprocess.run([sys.executable, str(pathlib.Path(trusted) / "check_tier.py"), "--base", "origin/master"],
                               capture_output=True, text=True, encoding="utf-8", check=True).stdout.strip()
         labels.append(f"tier:{tier}")
+    body = role.pr_body.format(issue=issue)
+    links = proposed_adr_links(base_sha) if base_sha else []
+    if links:
+        body += "\n\n**Proposed ADRs:**\n" + "\n".join(links)
     (out / "title").write_text(role.pr_title.format(issue=issue, title=" ".join(title.split()))[:256], encoding="utf-8")
-    (out / "body.md").write_text(role.pr_body.format(issue=issue) + "\n", encoding="utf-8")
+    (out / "body.md").write_text(body + "\n", encoding="utf-8")
     (out / "labels").write_text("\n".join(labels) + "\n", encoding="utf-8")
 
 
@@ -176,7 +189,7 @@ def main():
         role, branch = publish(a.role, a.issue, a.round, a.base_sha, a.patch, a.trusted,
                                a.tester_model, os.environ.get("GITHUB_RUN_ID", ""))
         if role.pr:
-            write_pr(role, a.trusted, pathlib.Path(a.pr_dir), a.issue, os.environ.get("ISSUE_TITLE", ""))
+            write_pr(role, a.trusted, pathlib.Path(a.pr_dir), a.issue, os.environ.get("ISSUE_TITLE", ""), a.base_sha)
     except Rejected as e:
         print(f"::error::publish rejected: {e}")
         sys.exit(1)
