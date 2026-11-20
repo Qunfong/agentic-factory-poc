@@ -1,0 +1,12 @@
+[
+  {
+    "id": "WI-1",
+    "title": "GET /readings/count returns the total stored reading count, reflecting deletions",
+    "ac_ids": ["AC-F21-1", "AC-F21-2"],
+    "paths": [
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/test/java/com/example/meter/ReadingCountTest.java"
+    ],
+    "depends_on": []
+  }
+]

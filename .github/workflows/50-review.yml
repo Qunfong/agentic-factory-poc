@@ -11,12 +11,33 @@ jobs:
   authorize:
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
+    outputs:
+      required_passed: ${{ steps.required.outputs.passed }}
     steps:
+      - name: Spend review budget on required's own result, not the raw run conclusion
+        # ADR-0007 (2026-11-20): acceptance no longer fails 40-verify's required job, so the whole
+        # workflow_run's own .conclusion is "failure" whenever a PR's hidden-scenario job fails -
+        # even when required (the real gate) passed. Query required's own job conclusion instead,
+        # so review still runs on every PR that actually passes the real gate.
+        # Own review findings (PR #25, run 44711648476): needs actions: read on the job (added
+        # above) or the API call 403s; --paginate in case a workflow ever grows past one page of
+        # jobs; and fail loudly, not passed=false, when "required" isn't found at all - a lookup
+        # failure must never look identical to a real gating failure.
+        id: required
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          conclusions=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.name == "required") | .conclusion')
+          n=$(printf '%s\n' "$conclusions" | grep -c .)
+          [ "$n" -eq 1 ] || { echo "::error::expected exactly one 'required' job on run $RUN_ID, found $n"; exit 1; }
+          [ "$conclusions" = success ] && passed=true || passed=false
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
@@ -34,7 +55,7 @@ jobs:
     needs: authorize
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.conclusion == 'success' &&
+      needs.authorize.outputs.required_passed == 'true' &&
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     # One call with timeout T (models.yaml timeout_s) and backoff 8/16/32 s: two timeouts take 2T+8;
