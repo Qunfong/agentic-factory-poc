@@ -26,6 +26,24 @@ def ready_label_refusal(issue):
     return label_refusal([json.loads(l) for l in lines if l.strip()], READY_LABEL,
                          lambda login: role_of(login, repo), os.environ.get("FACTORY_BOT_LOGIN", "").strip())
 
+if sys.argv[1] == "--unblock":
+    # A blocked work item starts once every dependency's issue is closed by a merged wi-<n> PR.
+    from unblock import ready_to_start
+    issues = json.loads(gh("issue", "list", "--label", "work-item", "--state", "all", "--limit", "500",
+                           "--json", "number,title,state,body,labels"))
+    merged = {p["headRefName"] for p in json.loads(gh("pr", "list", "--state", "merged", "--limit", "500",
+                                                      "--json", "headRefName"))}
+    bad = 0
+    for number, deps in ready_to_start(issues, merged):
+        if deps is None:
+            print(f"::error::#{number} is blocked but has no parsable Spec:/Depends on: lines; a person must unblock it")
+            bad += 1
+            continue
+        gh("issue", "edit", str(number), "--remove-label", "blocked")
+        dispatch(number)
+        print(f"unblocked #{number} (dependencies {', '.join(deps)} merged)")
+    sys.exit(1 if bad else 0)
+
 if sys.argv[1] == "--dispatch-queued":
     refused = 0
     for it in json.loads(gh("issue", "list", "--label", READY_LABEL, "--state", "open", "--json", "number")):

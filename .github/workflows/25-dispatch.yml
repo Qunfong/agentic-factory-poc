@@ -5,6 +5,10 @@ name: 25 dispatch
 on:
   schedule: [{cron: "*/30 7-18 * * 1-5"}]
   workflow_dispatch: {}
+  push:
+    branches: [master]
+    paths: ["app/**"]   # a merged work item may unblock its dependents right away
+concurrency: {group: dispatch, cancel-in-progress: false}   # --unblock then dispatch must not run twice at once
 permissions:
   contents: read
   issues: write
@@ -21,4 +25,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WIP_LIMIT: ${{ vars.WIP_LIMIT || '3' }}
           FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
-        run: python3 tools/create_work_items.py --dispatch-queued
+        run: |
+          python3 tools/create_work_items.py --unblock
+          python3 tools/create_work_items.py --dispatch-queued
