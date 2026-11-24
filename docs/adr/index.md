@@ -22,6 +22,7 @@ Factory decisions (0002 and up) are written by the Cowork design session from `c
 | 0016 | [DeepSeek on Azure replaces Gemini as a reviewer family; gpt-5 groups findings](0016-deepseek-replaces-gemini.md) | Accepted (built on `brief-020`) | `factory/models.yaml`, 50, policy check |
 | 0017 | [Separation of duties at release is an accepted gap while one person holds every gate role](0017-separation-of-duties-not-enforced-in-poc.md) | Proposed | 60-release, run record |
 | 0018 | [A design-idea tier, one level above a feature, feeds the same pipeline](0018-design-idea-tier.md) | Accepted | 08-design, `tools/publish.py`, `tools/decompose.py`, 12-decompose |
-| 0019 | [Work-item PRs merge themselves once `required` passes; spec and design PRs do not](0019-auto-merge-work-items.md) | Proposed (needs a manual ruleset step) | 55-merge, `publish.yml`, rulesets |
+| 0019 | [Work-item PRs merge themselves once a complete review passes](0019-auto-merge-work-items.md) | Accepted - ruleset bypass actor applied 2026-11-24 | `publish.yml`, `50-review.yml`, rulesets |
+| 0020 | [The builder's path guard follows its own work item's `paths`, not a fixed `app/src/main/**`](0020-builder-guard-follows-work-item-paths.md) | Accepted | `tools/publish.py`, `publish.yml` |
 
 Proposed ADRs from the spec writer arrive as `proposed-*.md` in a spec PR; the tech lead accepts them at the plan gate.
