@@ -1,6 +1,8 @@
 package com.example.meter;
 
 import java.net.URI;
+import java.util.Comparator;
+import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -8,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -33,6 +37,37 @@ public class MeterProblemHandler extends ResponseEntityExceptionHandler {
             return new ResponseEntity<>(problem, problemHeaders, status);
         }
         return super.createResponseEntity(body, headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
+                                                                  HttpStatusCode status, WebRequest request) {
+        List<FieldError> errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> new FieldError(e.getField(), e.getDefaultMessage()))
+                .toList();
+        return validationFailed(ex, errors, headers, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleMissingServletRequestParameter(MissingServletRequestParameterException ex, HttpHeaders headers,
+                                                                          HttpStatusCode status, WebRequest request) {
+        List<FieldError> errors = List.of(new FieldError(ex.getParameterName(), "must not be null"));
+        return validationFailed(ex, errors, headers, request);
+    }
+
+    /** 400 /problems/validation-failed with errors sorted by field, then message, and the field names in detail. */
+    private ResponseEntity<Object> validationFailed(Exception ex, List<FieldError> errors, HttpHeaders headers,
+                                                    WebRequest request) {
+        List<FieldError> sorted = errors.stream()
+                .sorted(Comparator.comparing(FieldError::field)
+                        .thenComparing(FieldError::message, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .toList();
+        String fields = String.join(", ", sorted.stream().map(FieldError::field).distinct().toList());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid field(s): " + fields);
+        problem.setType(URI.create("/problems/validation-failed"));
+        problem.setTitle("Invalid request");
+        problem.setProperty("errors", sorted);
+        return handleExceptionInternal(ex, problem, headers, HttpStatus.BAD_REQUEST, request);
     }
 
     @Override
