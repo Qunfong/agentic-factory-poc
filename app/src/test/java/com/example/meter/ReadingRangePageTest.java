@@ -1,5 +1,7 @@
 package com.example.meter;
 
+import java.time.Instant;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,23 +135,24 @@ class ReadingRangePageTest {
     @DisplayName("AC-F33-2 default returns first 20 readings in ascending takenAt order")
     void ac_f33_2_default_first_20_ascending() throws Exception {
         String meterId = "m-f33-2-default-asc";
-        // Insert 25 readings out of order: newest first
+        Instant base = Instant.parse("2033-01-01T00:00:00Z");
+        // Insert 25 readings out of order: newest first. Hour-of-day formatting overflows past 23
+        // (own incident, F33 round 0): add whole hours to an Instant instead.
         for (int i = 24; i >= 0; i--) {
-            String takenAt = String.format("2033-01-01T%02d:00:00Z", i);
-            postReading(meterId, takenAt, String.valueOf(i));
+            postReading(meterId, base.plusSeconds(i * 3600L).toString(), String.valueOf(i));
         }
         // First page (default size=20) should have 20 earliest takenAt values 00..19
         mvc.perform(get("/readings").param("meterId", meterId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].takenAt").value("2033-01-01T00:00:00Z"))
-            .andExpect(jsonPath("$[19].takenAt").value("2033-01-01T19:00:00Z"))
+            .andExpect(jsonPath("$[0].takenAt").value(base.plusSeconds(0).toString()))
+            .andExpect(jsonPath("$[19].takenAt").value(base.plusSeconds(19 * 3600L).toString()))
             .andExpect(jsonPath("$[20]").doesNotExist());
 
         // Second page should have the remaining 5: 20..24
         mvc.perform(get("/readings").param("meterId", meterId).param("page", "1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].takenAt").value("2033-01-01T20:00:00Z"))
-            .andExpect(jsonPath("$[4].takenAt").value("2033-01-01T24:00:00Z"))
+            .andExpect(jsonPath("$[0].takenAt").value(base.plusSeconds(20 * 3600L).toString()))
+            .andExpect(jsonPath("$[4].takenAt").value(base.plusSeconds(24 * 3600L).toString()))
             .andExpect(jsonPath("$[5]").doesNotExist());
     }
 
@@ -158,13 +161,13 @@ class ReadingRangePageTest {
     @DisplayName("AC-F33-2 size=100 allowed returns up to 100 readings")
     void ac_f33_2_size_100_allowed() throws Exception {
         String meterId = "m-f33-2-size100";
+        Instant base = Instant.parse("2034-01-01T00:00:00Z");
         for (int i = 0; i < 60; i++) {
-            String takenAt = String.format("2034-01-01T%02d:00:00Z", i);
-            postReading(meterId, takenAt, "1.0");
+            postReading(meterId, base.plusSeconds(i * 3600L).toString(), "1.0");
         }
         mvc.perform(get("/readings").param("meterId", meterId).param("size", "100"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[59].takenAt").value("2034-01-01T59:00:00Z"))
+            .andExpect(jsonPath("$[59].takenAt").value(base.plusSeconds(59 * 3600L).toString()))
             .andExpect(jsonPath("$[60]").doesNotExist());
     }
 
