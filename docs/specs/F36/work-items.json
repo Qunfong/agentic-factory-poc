@@ -1,0 +1,12 @@
+[
+  {
+    "id": "WI-1",
+    "title": "GET /readings/export returns all stored readings as RFC 4180 CSV with a meterId,timestamp,value header",
+    "ac_ids": ["AC-F36-1", "AC-F36-2", "AC-F36-3"],
+    "paths": [
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/test/java/com/example/meter/ReadingExportTest.java"
+    ],
+    "depends_on": []
+  }
+]
