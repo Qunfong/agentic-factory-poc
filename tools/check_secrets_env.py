@@ -12,6 +12,7 @@ AZURE = ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT")
 # role -> (required, optional, what happens without the optional ones); mirrors factory/models.yaml
 ROLES = {
     "spec-writer": (("CLAUDE_CODE_OAUTH_TOKEN",), (), ""),
+    "design-writer": (("CLAUDE_CODE_OAUTH_TOKEN",), (), ""),
     "builder": (("CLAUDE_CODE_OAUTH_TOKEN",), (), ""),
     "tester": (AZURE, (), ""),
     "review": (AZURE, ("AZURE_AI_V1_ENDPOINT",),

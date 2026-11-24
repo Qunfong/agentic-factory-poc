@@ -45,7 +45,8 @@ class PreflightTest(unittest.TestCase):
 
     def test_presence_flags_from_a_workflow_count_as_set(self):
         rows = dict((r, ok) for r, ok, _ in pre.readiness({"CLAUDE_CODE_OAUTH_TOKEN": "set"}))
-        self.assertEqual(rows, {"spec-writer": True, "builder": True, "tester": False, "review": False})
+        self.assertEqual(rows, {"spec-writer": True, "design-writer": True, "builder": True,
+                                 "tester": False, "review": False})
 
     def test_without_role_the_table_never_fails(self):
         self.assertEqual(run([], {})[0], 0)

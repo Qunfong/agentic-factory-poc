@@ -21,5 +21,7 @@ Factory decisions (0002 and up) are written by the Cowork design session from `c
 | 0015 | [Three reviewer families with 2-of-3 consensus, isolated per provider](0015-three-family-review-consensus.md) | Accepted; Gemini rows superseded by 0016 | `factory/models.yaml`, `tools/review.py`, 50 |
 | 0016 | [DeepSeek on Azure replaces Gemini as a reviewer family; gpt-5 groups findings](0016-deepseek-replaces-gemini.md) | Accepted (built on `brief-020`) | `factory/models.yaml`, 50, policy check |
 | 0017 | [Separation of duties at release is an accepted gap while one person holds every gate role](0017-separation-of-duties-not-enforced-in-poc.md) | Proposed | 60-release, run record |
+| 0018 | [A design-idea tier, one level above a feature, feeds the same pipeline](0018-design-idea-tier.md) | Accepted | 08-design, `tools/publish.py`, `tools/decompose.py`, 12-decompose |
+| 0019 | [Work-item PRs merge themselves once `required` passes; spec and design PRs do not](0019-auto-merge-work-items.md) | Proposed (needs a manual ruleset step) | 55-merge, `publish.yml`, rulesets |
 
 Proposed ADRs from the spec writer arrive as `proposed-*.md` in a spec PR; the tech lead accepts them at the plan gate.

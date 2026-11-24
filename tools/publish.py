@@ -7,7 +7,7 @@ Run with the working tree checked out at --base-sha. Pushing and the PR stay in 
 import argparse, dataclasses, os, pathlib, re, subprocess, sys
 
 MAX_PATCH_BYTES = 2 * 1024 * 1024
-BRANCH_RE = re.compile(r"^(spec/F[1-9][0-9]*|wi-[1-9][0-9]*)$")
+BRANCH_RE = re.compile(r"^(spec/F[1-9][0-9]*|wi-[1-9][0-9]*|design/D[1-9][0-9]*)$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 BOT = ("factory-bot", "factory-bot@users.noreply.github.com")
 STUB_MARKER = "// factory-test-stub"
@@ -37,6 +37,17 @@ ROLES = {
         pr_body="Spec, plan, work items and ADR proposals for #{issue}. "
                 "Merging this PR is the **plan gate** (tech lead, see CODEOWNERS).",
         labels=("spec",),
+    ),
+    "design-writer": Role(
+        branch="design/D{issue}",
+        guard=("--allow", "docs/design/D{issue}/**", "--allow", "docs/adr/proposed-*.md"),
+        subject="design: D{issue}",
+        assisted_by="claude-code:claude-opus-5-5",
+        pr=True,
+        pr_title="design: D{issue} {title}",
+        pr_body="Design idea, open questions and ADR proposals for #{issue}. "
+                "Merging this PR is the **idea sign-off** (tech lead, see CODEOWNERS); it is not auto-merged.",
+        labels=("design",),
     ),
     "tester": Role(
         branch="wi-{issue}",

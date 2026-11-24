@@ -1,0 +1,21 @@
+name: Design idea
+description: A design or architecture idea to spar about, one level above a feature. A product owner approves it with the gate:intent-approved label; the design writer turns it into a design doc and ADR proposals for sign-off.
+labels: [design]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem or question, description: "What are we unsure about, and why does it matter now"}
+    validations: {required: true}
+  - type: textarea
+    id: context
+    attributes: {label: Context, description: "What already exists (systems, ADRs) that this idea touches or would change"}
+  - type: textarea
+    id: hunch
+    attributes: {label: Your own hunch (optional)}
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Readiness
+      options:
+        - label: The problem is clear enough that a few real alternatives could be sketched
+          required: true

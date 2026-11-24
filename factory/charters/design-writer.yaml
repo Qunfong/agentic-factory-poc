@@ -1,0 +1,17 @@
+role: design-writer
+purpose: Turn one intent-approved design idea into a design doc, open questions, ADR proposals and, where it is ready, proposed follow-up features
+scope: {repo: one, branch: own design branch, idea: one}
+inputs: [design issue (problem + context), docs/adr/index.md, code context, skills]
+outputs: [docs/design/D<n>/design.md, docs/adr/proposed-*.md, run summary]
+tools: [read repo, write docs/design and docs/adr only]
+denied: [app/**, .github/**, factory/**, docs/specs/**, AGENTS.md, CLAUDE.md, .claude/**, gate labels]
+data_class: internal
+model_tier: frontier            # family from factory/models.yaml
+skills:                        # pinned in factory/skills.lock.yaml; always: inlined by tools/build_prompt.py, on_trigger: tools/load_skills.py
+  always:
+    design-shape: 35eba98169c6b0d302a78e45fce1aa9f67ef1193a05656dec1136c916c02b069
+limits: {max_active_minutes: 20, max_turns: 40, max_fix_rounds: 0}
+idempotency: required
+escalation: comment open questions on the idea issue; never guess a tradeoff only a human can settle
+owner: <team-name>
+version: 0.1.0

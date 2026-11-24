@@ -69,6 +69,16 @@ class PublishTest(unittest.TestCase):
         publish.write_pr(role, str(TOOLS), out, "7", "F7 title", self.base)
         self.assertNotIn("Proposed ADRs", (out / "body.md").read_text(encoding="utf-8"))
 
+    def test_design_writer_change_becomes_one_bot_commit_on_design_branch(self):
+        self.agent_patch(lambda: self.write("docs/design/D7/design.md", "design\n"))
+        self.assertEqual(self.run_publish("design-writer")[1], "design/D7")
+        self.assertEqual(git("log", "-1", "--format=%an|%s"), "factory-bot|design: D7")
+
+    def test_design_writer_outside_docs_design_is_rejected(self):
+        self.agent_patch(lambda: self.write("docs/specs/F7/spec.md", "evil\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("design-writer")
+
     def test_spec_writer_outside_docs_is_rejected(self):
         self.agent_patch(lambda: self.write("app/src/main/A.java", "evil\n"))
         with self.assertRaisesRegex(publish.Rejected, "path guard"):

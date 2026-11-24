@@ -283,6 +283,7 @@ class RealRepoTest(unittest.TestCase):
             "builder": {"always": ["meter-conventions", "minimal-change"], "on_trigger": ["impact-check"]},
             "tester": {"always": ["meter-test-conventions", "test-behaviour"], "on_trigger": []},
             "spec-writer": {"always": ["spec-shape"], "on_trigger": []},
+            "design-writer": {"always": ["design-shape"], "on_trigger": []},
             "review-agent": {"always": [], "on_trigger": []},
             "verifier": {"always": [], "on_trigger": []}})
 
