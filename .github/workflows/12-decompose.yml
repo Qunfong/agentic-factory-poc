@@ -1,24 +1,19 @@
-# Stage 2 -> 1: once a design idea's PR is merged (a person's sign-off, never auto-merged - ADR-0018),
-# turn its "Proposed features" list into draft feature issues. No agent runs here and no gate label
-# is set - a product owner still approves each one before 08-design/10-spec can touch it (ADR-016).
+# Stage 2 -> 1: after a design idea's PR is merged by a person (ADR-0018), turn its "Proposed features"
+# list into draft feature issues. Runs from master AFTER the merge (push), so no PR-controlled code ever
+# runs with the App token (AI review of PR #30, finding #4). No agent, no gate label: a product owner
+# still approves each feature (ADR-016).
 name: 12 decompose
 on:
-  pull_request:
-    types: [closed]
+  push:
+    branches: [master]
+    paths: ["docs/design/D*/design.md"]
 permissions: {}
 jobs:
   decompose:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'design')
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Extract the design idea's issue number from its branch name
-        env:
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          [[ "$BRANCH" =~ ^design/D([1-9][0-9]*)$ ]] || { echo "::error::not a design branch: $BRANCH"; exit 1; }
-          echo "ISSUE=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
       - id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -27,9 +22,9 @@ jobs:
           permission-issues: write
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 2
           persist-credentials: false
-      - name: Create feature issues from the merged design doc (factory-bot App token)
+      - name: Create feature issues for each design doc this push added or changed (idempotent by title)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: python3 tools/decompose.py --design-md "docs/design/D${ISSUE}/design.md" --issue "$ISSUE"
+        run: python3 tools/decompose.py --changed-since HEAD^
