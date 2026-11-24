@@ -69,4 +69,12 @@ public class MeterProblemHandler extends ResponseEntityExceptionHandler {
             problem.setDetail(problem.getTitle());
         }
     }
+
+    @ExceptionHandler
+    ProblemDetail notFound(MeterNotFoundException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        problem.setType(URI.create("/problems/meter-not-found"));
+        problem.setTitle("Meter not found");
+        return problem;
+    }
 }
