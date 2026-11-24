@@ -35,6 +35,7 @@ families:
 # Builder and tester come from different families on purpose.
 roles:
   spec-writer: anthropic
+  design-writer: anthropic
   builder: anthropic
   tester: openai
 

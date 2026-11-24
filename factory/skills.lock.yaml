@@ -33,6 +33,9 @@ skills:
   spec-shape:
     dir: factory/skills/spec-shape
     sha256: e6eaf011e79671da8d92c5b987b38d6911365474c93cfac456951d4df1a384b2
+  design-shape:
+    dir: factory/skills/design-shape
+    sha256: 35eba98169c6b0d302a78e45fce1aa9f67ef1193a05656dec1136c916c02b069
   impact-check:
     dir: factory/skills/impact-check
     sha256: ac5a88bc81f0e4182fdaabcb94371dbd054367b5a4d83a79959858637dce8750

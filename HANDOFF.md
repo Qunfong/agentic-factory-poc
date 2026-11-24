@@ -8,6 +8,7 @@ Reference: *Agentic Software Factory – Logical Reference Architecture* (Archit
 - Work in small, reviewable commits on a branch per phase; open a PR per phase. Do not merge.
 - Do not weaken a control to make something pass (gates, path guards, secret scoping, branch protection).
 - Treat `factory/**` as factory config: propose changes, explain why.
+- Work-item (`agent`-labelled) PRs now auto-merge once `required` passes (ADR-0019, `55-merge.yml`) - but only after Qun runs the one `gh api` ruleset command ADR-0019 gives, adding the factory-bot App as a bypass actor on `factory-default-branch-review`. Until then every auto-merge attempt fails loudly at the same "review required" point hit on PR #27, which is expected, not a regression. Spec PRs (plan gate) and design PRs (idea sign-off, ADR-0018) are deliberately excluded and stay human-merged.
 - When something is unknown (exact model names, plan limits), stop and ask instead of guessing.
 - **Open questions on a feature, spec or PR go as a comment on that issue/PR, and the work stays paused until a reply lands there** - not resolved by a quick chat confirmation. Check back on that issue/PR for the reply (same idea as the "check collab" habit for `collab/QUESTIONS.md`/`ANSWERS.md`, applied to spec and feature work too) rather than assuming an answer given only in chat.
 

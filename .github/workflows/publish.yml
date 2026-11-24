@@ -1,15 +1,16 @@
-# The only place the factory pushes or opens PRs, with the factory-bot App token so the
-# pull_request / workflow_run chain fires. Agent jobs hand over a patch artifact and nothing else.
+# The only place the factory pushes, opens PRs or merges them, with the factory-bot App token so
+# the pull_request / workflow_run chain fires. Agent jobs hand over a patch artifact and nothing else.
 name: publish
 on:
   workflow_call:
     inputs:
-      role: {type: string, required: true}
-      issue: {type: string, required: true}
+      role: {type: string, required: false, default: ""}
+      issue: {type: string, required: false, default: ""}
       round: {type: string, required: false, default: "0"}
-      base_sha: {type: string, required: true}
+      base_sha: {type: string, required: false, default: ""}
       client_id: {type: string, required: true}
       tester_model: {type: string, required: false, default: ""}
+      merge_pr: {type: string, required: false, default: ""}
     secrets:
       FACTORY_APP_PRIVATE_KEY: {required: false}
     outputs:
@@ -18,6 +19,7 @@ on:
 permissions: {}
 jobs:
   publish:
+    if: inputs.merge_pr == ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions: {}
@@ -98,3 +100,31 @@ jobs:
           else
             gh pr create --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr/title")" --body-file "$RUNNER_TEMP/pr/body.md" "${create[@]}"
           fi
+
+  merge:
+    if: inputs.merge_pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Require the factory-bot App (never fall back to GITHUB_TOKEN)
+        env:
+          CLIENT_ID: ${{ inputs.client_id }}
+          HAS_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ "$HAS_KEY" != "true" ]; then
+            echo "::error::variable FACTORY_APP_CLIENT_ID or secret FACTORY_APP_PRIVATE_KEY is not set. publish does not fall back to GITHUB_TOKEN (brief 004, QUESTIONS Q3)."
+            exit 1
+          fi
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Merge the work-item PR (factory-bot App token; needs the bypass actor, see ADR-0019)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ inputs.merge_pr }}
+        run: gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --delete-branch
