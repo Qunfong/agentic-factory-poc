@@ -1,0 +1,25 @@
+# Closes a real gap found while re-verifying the E2E flow: depends_on sequencing (tools/create_work_items.py)
+# labels a dependent work item `blocked` when it is created, but nothing ever relabelled it once its
+# dependency merged - F7 WI-2/WI-3 sat `blocked` for days after WI-1 (#17) merged with nothing to act on it.
+name: 27 unblock
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  pull-requests: read
+jobs:
+  unblock:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'agent')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WIP_LIMIT: ${{ vars.WIP_LIMIT || '3' }}
+        run: python3 tools/unblock_work_items.py
