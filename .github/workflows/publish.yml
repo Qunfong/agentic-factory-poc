@@ -11,6 +11,7 @@ on:
       client_id: {type: string, required: true}
       tester_model: {type: string, required: false, default: ""}
       merge_pr: {type: string, required: false, default: ""}
+      merge_head: {type: string, required: false, default: ""}
     secrets:
       FACTORY_APP_PRIVATE_KEY: {required: false}
     outputs:
@@ -127,4 +128,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR: ${{ inputs.merge_pr }}
-        run: gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --delete-branch
+          HEAD: ${{ inputs.merge_head }}
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[1-9][0-9]*$ ]] || { echo "::error::merge_pr is not a PR number"; exit 1; }
+          [[ "$HEAD" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::merge_head is not a commit id"; exit 1; }
+          labelled=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | contains(["agent"])')
+          [ "$labelled" = "true" ] || { echo "::error::PR #$PR has no agent label; only work-item PRs auto-merge"; exit 1; }
+          # --match-head-commit: refuses when the branch moved after the review (the new head gets its own review)
+          gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$HEAD"
