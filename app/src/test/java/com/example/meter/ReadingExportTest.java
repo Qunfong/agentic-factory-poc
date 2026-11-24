@@ -118,7 +118,7 @@ class ReadingExportTest {
                 .content("{\"meterId\":\"a,b\",\"takenAt\":\"2026-01-01T00:00:00Z\",\"kwh\":3}"))
            .andExpect(status().isCreated());
         mvc.perform(post("/readings").contentType("application/json")
-                .content("{\"meterId\":\"say \"hi\"\",\"takenAt\":\"2026-01-02T00:00:00Z\",\"kwh\":4}"))
+                .content("{\"meterId\":\"say \\\"hi\\\"\",\"takenAt\":\"2026-01-02T00:00:00Z\",\"kwh\":4}"))
            .andExpect(status().isCreated());
         mvc.perform(post("/readings").contentType("application/json")
                 .content("{\"meterId\":\"m1\",\"takenAt\":\"2026-01-03T00:00:00Z\",\"kwh\":5}"))
