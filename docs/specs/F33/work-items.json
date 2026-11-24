@@ -1,0 +1,12 @@
+[
+  {
+    "id": "WI-1",
+    "title": "GET /readings filters by inclusive from/to range, paginates in ascending takenAt order, 400 on invalid page/size/instant",
+    "ac_ids": ["AC-F33-1", "AC-F33-2", "AC-F33-3"],
+    "paths": [
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/test/java/com/example/meter/ReadingRangePageTest.java"
+    ],
+    "depends_on": []
+  }
+]
