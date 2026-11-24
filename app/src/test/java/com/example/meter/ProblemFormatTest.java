@@ -141,13 +141,16 @@ class ProblemFormatTest {
     @Test
     @DisplayName("AC-F34-6: unknown paths return 404 /problems/not-found for DELETE")
     void ac_f34_6_unknown_path_delete_returns_404_problem() throws Exception {
-        mvc.perform(MockMvcRequestBuilders.delete("/meters/x")
+        // "/meters/x" would no longer be unknown (F32 added GET /meters/{id}, so DELETE there is
+        // 405, not 404) - own incident, found running F34 concurrently with F32. Use a path no
+        // controller maps under any method.
+        mvc.perform(MockMvcRequestBuilders.delete("/no-such-resource")
                 .accept(MediaType.APPLICATION_JSON))
             .andExpect(MockMvcResultMatchers.status().isNotFound())
             .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(MockMvcResultMatchers.jsonPath("$.type").value("/problems/not-found"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.title").value("Not Found"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.status").value(404))
-            .andExpect(MockMvcResultMatchers.jsonPath("$.detail").value("No endpoint DELETE /meters/x"));
+            .andExpect(MockMvcResultMatchers.jsonPath("$.detail").value("No endpoint DELETE /no-such-resource"));
     }
 }
