@@ -48,13 +48,13 @@ class ReadingExportTest {
     void ac_f36_2_exports_posted_readings_in_order_with_plain_decimal_values() throws Exception {
         // Arrange: post three readings (two meters) in a known order; include scientific notation
         mvc.perform(post("/readings").contentType("application/json")
-                .content("{\"meterId\":\"m1\",\"takenAt\":\"2026-01-01T00:00:00Z\",\"kwh\":12.5}"))
+                .content("{\"meterId\":\"m-f36-1\",\"takenAt\":\"2026-01-01T00:00:00Z\",\"kwh\":12.5}"))
            .andExpect(status().isCreated());
         mvc.perform(post("/readings").contentType("application/json")
-                .content("{\"meterId\":\"m2\",\"takenAt\":\"2026-01-02T00:00:00Z\",\"kwh\":1E+3}"))
+                .content("{\"meterId\":\"m-f36-2\",\"takenAt\":\"2026-01-02T00:00:00Z\",\"kwh\":1E+3}"))
            .andExpect(status().isCreated());
         mvc.perform(post("/readings").contentType("application/json")
-                .content("{\"meterId\":\"m1\",\"takenAt\":\"2026-01-03T00:00:00Z\",\"kwh\":0}"))
+                .content("{\"meterId\":\"m-f36-1\",\"takenAt\":\"2026-01-03T00:00:00Z\",\"kwh\":0}"))
            .andExpect(status().isCreated());
 
         // Act
@@ -70,9 +70,9 @@ class ReadingExportTest {
         String[] lines = body.split("\r\n");
         // header + 3 data lines
         assertThat(lines.length).isGreaterThanOrEqualTo(4);
-        assertThat(lines[1]).isEqualTo("m1,2026-01-01T00:00:00Z,12.5");
-        assertThat(lines[2]).isEqualTo("m2,2026-01-02T00:00:00Z,1000");
-        assertThat(lines[3]).isEqualTo("m1,2026-01-03T00:00:00Z,0");
+        assertThat(lines[1]).isEqualTo("m-f36-1,2026-01-01T00:00:00Z,12.5");
+        assertThat(lines[2]).isEqualTo("m-f36-2,2026-01-02T00:00:00Z,1000");
+        assertThat(lines[3]).isEqualTo("m-f36-1,2026-01-03T00:00:00Z,0");
     }
 
     @Test
@@ -121,7 +121,7 @@ class ReadingExportTest {
                 .content("{\"meterId\":\"say \\\"hi\\\"\",\"takenAt\":\"2026-01-02T00:00:00Z\",\"kwh\":4}"))
            .andExpect(status().isCreated());
         mvc.perform(post("/readings").contentType("application/json")
-                .content("{\"meterId\":\"m1\",\"takenAt\":\"2026-01-03T00:00:00Z\",\"kwh\":5}"))
+                .content("{\"meterId\":\"m-f36-1\",\"takenAt\":\"2026-01-03T00:00:00Z\",\"kwh\":5}"))
            .andExpect(status().isCreated());
 
         // Act
@@ -136,6 +136,6 @@ class ReadingExportTest {
         assertThat(lines.length).isGreaterThanOrEqualTo(4);
         assertThat(lines[1]).startsWith("\"a,b\",");
         assertThat(lines[2]).startsWith("\"say \"\"hi\"\"\",");
-        assertThat(lines[3]).startsWith("m1,");
+        assertThat(lines[3]).startsWith("m-f36-1,");
     }
 }
