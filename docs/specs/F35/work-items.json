@@ -1,0 +1,9 @@
+[
+  {
+    "id": "WI-1",
+    "title": "README HTTP API section: endpoints, status codes and curl examples",
+    "ac_ids": ["AC-F35-1", "AC-F35-2", "AC-F35-3"],
+    "paths": ["README.md"],
+    "depends_on": []
+  }
+]

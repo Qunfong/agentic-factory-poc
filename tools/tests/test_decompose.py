@@ -46,3 +46,20 @@ class ParseFeaturesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChangedDocsTest(unittest.TestCase):
+    def test_only_design_md_of_numbered_ideas_count(self):
+        import subprocess, tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            run = lambda *a: subprocess.run(a, cwd=d, check=True, capture_output=True)
+            run("git", "init", "-q"); run("git", "config", "user.email", "a@b"); run("git", "config", "user.name", "a")
+            pathlib.Path(d, "x").write_text("x"); run("git", "add", "."); run("git", "commit", "-qm", "0")
+            for f in ("docs/design/D3/design.md", "docs/design/D03/design.md", "docs/design/D4/notes.md"):
+                p = pathlib.Path(d, f); p.parent.mkdir(parents=True, exist_ok=True); p.write_text("x")
+            run("git", "add", "."); run("git", "commit", "-qm", "1")
+            old = os.getcwd(); os.chdir(d)
+            try:
+                self.assertEqual(decompose.design_docs_changed("HEAD^"), [("3", "docs/design/D3/design.md")])
+            finally:
+                os.chdir(old)
