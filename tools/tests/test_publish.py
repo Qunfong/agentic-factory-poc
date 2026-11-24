@@ -44,8 +44,9 @@ class PublishTest(unittest.TestCase):
         git("reset", "-q", "--hard", self.base)
         git("clean", "-qfdx")
 
-    def run_publish(self, role, base=None, issue="7"):
-        return publish.publish(role, issue, "1", base or self.base, str(self.patch), str(TOOLS), "gpt-x", "42")
+    def run_publish(self, role, base=None, issue="7", issue_paths=None):
+        return publish.publish(role, issue, "1", base or self.base, str(self.patch), str(TOOLS), "gpt-x", "42",
+                               issue_paths)
 
     def test_spec_writer_change_becomes_one_bot_commit_on_spec_branch(self):
         self.agent_patch(lambda: self.write("docs/specs/F7/spec.md", "spec\n"))
@@ -83,6 +84,38 @@ class PublishTest(unittest.TestCase):
         self.agent_patch(lambda: self.write("app/src/main/A.java", "evil\n"))
         with self.assertRaisesRegex(publish.Rejected, "path guard"):
             self.run_publish("spec-writer")
+
+    def test_builder_with_issue_paths_may_write_a_declared_non_code_path(self):
+        self.agent_patch(lambda: self.write("README.md", "docs\n"))
+        role, branch = self.run_publish("builder", issue_paths=["README.md"])
+        self.assertEqual((role, branch), (publish.ROLES["builder"], "wi-7"))
+
+    def test_builder_with_issue_paths_is_narrowed_to_them_not_the_old_default(self):
+        self.agent_patch(lambda: self.write("app/src/main/A.java", "x\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder", issue_paths=["README.md"])
+
+    def test_builder_issue_paths_drops_test_files_tester_owns_those(self):
+        self.agent_patch(lambda: self.write("app/src/main/A.java", "x\n"))
+        role, _ = self.run_publish("builder", issue_paths=["app/src/main/A.java", "app/src/test/ATest.java"])
+        self.assertEqual(role, publish.ROLES["builder"])
+
+    def test_builder_issue_paths_may_never_include_a_denied_path(self):
+        self.agent_patch(lambda: self.write("README.md", "docs\n"))
+        with self.assertRaisesRegex(publish.Rejected, "never allowed"):
+            self.run_publish("builder", issue_paths=["README.md", ".github/workflows/evil.yml"])
+
+    def test_builder_with_no_issue_paths_keeps_the_old_default_guard(self):
+        self.agent_patch(lambda: self.write("README.md", "docs\n"))
+        with self.assertRaisesRegex(publish.Rejected, "path guard"):
+            self.run_publish("builder", issue_paths=None)
+
+    def test_builder_allowed_paths_helper(self):
+        self.assertIsNone(publish.builder_allowed_paths([]))
+        self.assertIsNone(publish.builder_allowed_paths(["app/src/test/ATest.java"]))
+        self.assertEqual(publish.builder_allowed_paths(["README.md", "app/src/test/ATest.java"]), ["README.md"])
+        with self.assertRaisesRegex(publish.Rejected, "never allowed"):
+            publish.builder_allowed_paths(["AGENTS.md"])
 
     def test_spec_writer_may_write_only_its_charter_paths(self):
         self.agent_patch(lambda: (self.write("docs/specs/F7/plan.md", "p\n"),
