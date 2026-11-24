@@ -42,6 +42,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read
     outputs:
       base_sha: ${{ steps.base.outputs.sha }}
       run_tester: ${{ steps.base.outputs.run_tester }}
@@ -71,6 +72,11 @@ jobs:
         run: |
           python3 tools/build_prompt.py tester "$RUNNER_TEMP/wi-input/issue.json" > "$RUNNER_TEMP/wi-input/tester.md"
           python3 tools/build_prompt.py builder "$RUNNER_TEMP/wi-input/issue.json" > "$RUNNER_TEMP/wi-input/builder.md"
+      - name: Append the maintainers' PR review comments to the builder prompt (round > 0; data, brief 033)
+        if: inputs.round != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/feedback.py --branch "wi-$ISSUE" >> "$RUNNER_TEMP/wi-input/builder.md"
       - uses: actions/upload-artifact@v4
         with:
           name: wi-input
