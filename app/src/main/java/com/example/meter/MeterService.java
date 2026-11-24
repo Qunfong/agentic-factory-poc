@@ -17,4 +17,13 @@ public class MeterService {
         }
         return meter;
     }
+
+    /** Returns the registered meter; throws MeterNotFoundException if no meter has this id. */
+    public Meter find(String id) {
+        Meter meter = meters.get(id);
+        if (meter == null) {
+            throw new MeterNotFoundException(id);
+        }
+        return meter;
+    }
 }

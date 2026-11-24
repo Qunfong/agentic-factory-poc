@@ -26,4 +26,10 @@ public class MeterController {
         Meter meter = service.register(request.id(), request.type());
         return new MeterResponse(meter.id(), meter.type(), meter.unit());
     }
+
+    @GetMapping("/{id}")
+    public MeterResponse get(@PathVariable String id) {
+        Meter meter = service.find(id);
+        return new MeterResponse(meter.id(), meter.type(), meter.unit());
+    }
 }
