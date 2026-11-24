@@ -67,6 +67,9 @@ jobs:
     # Grok verifier that times out twice, or a few that answer in about 4 min. A job that hits this limit
     # posts nothing and fails, which is never a pass.
     timeout-minutes: 45
+    outputs:
+      merge_pr: ${{ steps.review.outputs.merge_pr }}
+      merge_head: ${{ steps.review.outputs.merge_head }}
     permissions:
       contents: read
       pull-requests: write
@@ -85,6 +88,7 @@ jobs:
         run: |
           pip install -q --require-hashes --only-binary=:all: -r tools/requirements-review.txt
       - name: Review with Azure OpenAI, Azure Grok and Azure DeepSeek, verify single-source findings across families
+        id: review
         env:
           GH_TOKEN: ${{ github.token }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -98,3 +102,19 @@ jobs:
           path: run-record.json
           if-no-files-found: ignore
           retention-days: 7
+
+  merge:
+    # Brief 034: merge only after a complete three-family review said so (tools/review.py merge_decision),
+    # for the exact head that was reviewed. The merge itself is publish.yml's, never a gh call here.
+    needs: review
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      needs.review.outputs.merge_pr != ''
+    permissions: {}
+    uses: ./.github/workflows/publish.yml
+    with:
+      client_id: ${{ vars.FACTORY_APP_CLIENT_ID }}
+      merge_pr: ${{ needs.review.outputs.merge_pr }}
+      merge_head: ${{ needs.review.outputs.merge_head }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}

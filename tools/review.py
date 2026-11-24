@@ -163,6 +163,33 @@ def labels_for(plan, result=None):
     return ([HUMAN_REVIEW] if human else []) + ([INFRA_FAILURE] if result and result.infra_failed else [])
 
 
+def merge_decision(pr_labels, plan, result):
+    """(ok, reason): may the factory merge this PR after the AI review? Strict on purpose (brief 034):
+    a work-item PR (`agent` label), every wanted family answered, no unresolved blocker/major from either
+    consensus (2+ families) or a verifier-confirmed single source, and nothing that needs a person."""
+    if "agent" not in pr_labels:
+        return False, "not a work-item PR (no agent label)"
+    labels = labels_for(plan, result)
+    if HUMAN_REVIEW in labels:
+        return False, "needs a person (red tier, missing family, incomplete review or unverified finding)"
+    if INFRA_FAILURE in labels or len(result.answered) < plan.wanted:
+        return False, "not every reviewer family answered"
+    blocking = [f for f in result.findings
+                if section(f) in ("strong", "verified") and f.get("severity") in ("blocker", "major")]
+    if blocking:
+        return False, f"{len(blocking)} blocker/major finding(s) agreed or verified: " + ", ".join(f"#{f['id']}" for f in blocking)
+    return True, "complete review, no blocker/major finding"
+
+
+def write_merge_outputs(pr_number, head_sha, ok, reason):
+    """Hand the decision to the workflow. Empty merge_pr means: do not merge."""
+    out = os.environ.get("GITHUB_OUTPUT")
+    print(f"merge decision for PR #{pr_number}: {'MERGE' if ok else 'no merge'} ({reason})")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(f"merge_pr={pr_number if ok else ''}\nmerge_head={head_sha if ok else ''}\n")
+
+
 def verifiers_for(source, answered):
     """Other answering families in turn, starting after `source`, so verification spreads over families."""
     i = answered.index(source) if source in answered else 0
@@ -493,6 +520,8 @@ def main():
         print(f"::error::review incomplete: {len(result.answered)} of {plan.wanted} reviewers answered")
         sys.exit(1)
     print(f"posted {len(result.findings)} findings; labels: {', '.join(labels) or 'none'}")
+    ok, reason = merge_decision({l["name"] for l in pr["labels"]}, plan, result)
+    write_merge_outputs(pr["number"], head_sha, ok, reason)
 
 
 if __name__ == "__main__":
