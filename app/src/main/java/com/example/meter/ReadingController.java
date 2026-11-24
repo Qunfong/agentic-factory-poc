@@ -1,6 +1,7 @@
 package com.example.meter;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -12,6 +13,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /** Seed endpoint so the factory has something real to extend. */
@@ -24,6 +27,10 @@ public class ReadingController {
 
     /** Total number of stored readings; never negative. */
     public record ReadingCount(long count) {}
+
+    static final String CSV_HEADER = "meterId,timestamp,value";
+    // explicit UTF-8: StringHttpMessageConverter would otherwise default to ISO-8859-1
+    static final MediaType TEXT_CSV_UTF8 = new MediaType("text", "csv", StandardCharsets.UTF_8);
 
     private final List<Reading> readings = new CopyOnWriteArrayList<>();
 
@@ -54,6 +61,25 @@ public class ReadingController {
     @GetMapping("/count")
     public ReadingCount count() {
         return new ReadingCount(readings.size());
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<String> export() {
+        StringBuilder csv = new StringBuilder(CSV_HEADER).append("\r\n");
+        for (Reading r : readings) { // snapshot iterator: consistent under concurrent writes
+            csv.append(csvField(r.meterId())).append(',')
+               .append(csvField(r.takenAt().toString())).append(',')
+               .append(csvField(r.kwh().toPlainString())).append("\r\n");
+        }
+        return ResponseEntity.ok().contentType(TEXT_CSV_UTF8).body(csv.toString());
+    }
+
+    /** RFC 4180 field: quoted iff it contains ',', '"', CR or LF; inner '"' doubled. */
+    static String csvField(String raw) {
+        if (raw.indexOf(',') < 0 && raw.indexOf('"') < 0 && raw.indexOf('\r') < 0 && raw.indexOf('\n') < 0) {
+            return raw;
+        }
+        return '"' + raw.replace("\"", "\"\"") + '"';
     }
 
     @DeleteMapping

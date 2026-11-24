@@ -1,0 +1,40 @@
+[
+  {
+    "id": "WI-1",
+    "title": "Uniform problem+json for every error; malformed JSON is 400 and unknown paths are 404",
+    "ac_ids": ["AC-F34-1", "AC-F34-5", "AC-F34-6"],
+    "paths": [
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/main/resources/application.properties",
+      "app/src/test/java/com/example/meter/ProblemFormatTest.java"
+    ],
+    "depends_on": []
+  },
+  {
+    "id": "WI-2",
+    "title": "Validation problems name the offending fields on POST /meters and POST /readings",
+    "ac_ids": ["AC-F34-2", "AC-F34-3"],
+    "paths": [
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/main/java/com/example/meter/FieldError.java",
+      "app/src/test/java/com/example/meter/FieldValidationProblemTest.java"
+    ],
+    "depends_on": ["WI-1"]
+  },
+  {
+    "id": "WI-3",
+    "title": "POST /readings for an unregistered meter returns 404 meter-not-found and stores nothing",
+    "ac_ids": ["AC-F34-4"],
+    "paths": [
+      "app/src/main/java/com/example/meter/ReadingController.java",
+      "app/src/main/java/com/example/meter/MeterService.java",
+      "app/src/main/java/com/example/meter/MeterNotFoundException.java",
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/test/java/com/example/meter/UnregisteredMeterReadingTest.java",
+      "app/src/test/java/com/example/meter/ReadingControllerTest.java",
+      "app/src/test/java/com/example/meter/ReadingDeleteTest.java",
+      "app/src/test/java/com/example/meter/ReadingCountTest.java"
+    ],
+    "depends_on": ["WI-2"]
+  }
+]
