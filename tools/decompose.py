@@ -43,6 +43,24 @@ def issue_body(design_issue, acs):
                       "", "## Acceptance criteria", *acs]) + "\n"
 
 
+def existing_titles(repo):
+    out = subprocess.run(["gh", "issue", "list", "-R", repo, "--state", "all", "--limit", "500",
+                          "--json", "title", "--jq", ".[].title"], capture_output=True, text=True, check=True).stdout
+    return {t.strip() for t in out.splitlines()}
+
+
+def design_docs_changed(since):
+    """(issue number, path) for docs/design/D<n>/design.md files changed between `since` and HEAD."""
+    out = subprocess.run(["git", "diff", "--name-only", "--diff-filter=AM", since, "HEAD", "--", "docs/design"],
+                         capture_output=True, text=True, check=True).stdout
+    found = []
+    for path in out.splitlines():
+        m = re.fullmatch(r"docs/design/D([1-9][0-9]*)/design\.md", path)
+        if m:
+            found.append((m.group(1), path))
+    return found
+
+
 def create_issue(repo, title, body, dry_run):
     if dry_run:
         print(f"::notice::would create feature issue: {title}")
@@ -53,23 +71,31 @@ def create_issue(repo, title, body, dry_run):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--design-md", required=True)
-    p.add_argument("--issue", required=True)
+    p.add_argument("--design-md")
+    p.add_argument("--issue")
+    p.add_argument("--changed-since", help="git revision; process every design.md added or changed since it")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
-    if not re.fullmatch(r"[1-9][0-9]*", a.issue):
-        sys.exit("decompose: --issue must be a decimal number without leading zeros")
-    text = pathlib.Path(a.design_md).read_text(encoding="utf-8")
-    features = parse_features(text)
-    if not features:
-        print('decompose: no "Proposed features" with acceptance criteria found; nothing to do')
-        return
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not a.dry_run and not repo:
         sys.exit("decompose: GITHUB_REPOSITORY is required unless --dry-run")
-    for title, acs in features:
-        create_issue(repo, title, issue_body(a.issue, acs), a.dry_run)
-    print(f"decompose: {len(features)} feature issue(s) from design idea #{a.issue}")
+    if a.changed_since:
+        docs = design_docs_changed(a.changed_since)
+    elif a.design_md and a.issue and re.fullmatch(r"[1-9][0-9]*", a.issue):
+        docs = [(a.issue, a.design_md)]
+    else:
+        sys.exit("decompose: give --changed-since REV, or --design-md PATH with --issue N (no leading zeros)")
+    have = set() if a.dry_run else existing_titles(repo)
+    made = 0
+    for issue, path in docs:
+        for title, acs in parse_features(pathlib.Path(path).read_text(encoding="utf-8")):
+            if title in have:
+                print(f"decompose: skip, an issue titled {title!r} already exists")
+                continue
+            create_issue(repo, title, issue_body(issue, acs), a.dry_run)
+            have.add(title)
+            made += 1
+    print(f"decompose: {made} feature issue(s) created from {len(docs)} design doc(s)")
 
 
 if __name__ == "__main__":
