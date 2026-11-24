@@ -3,6 +3,7 @@ package com.example.meter;
 import java.net.URI;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -42,8 +43,12 @@ public class MeterProblemHandler extends ResponseEntityExceptionHandler {
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
                                                                   HttpStatusCode status, WebRequest request) {
-        List<FieldError> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(e -> new FieldError(e.getField(), e.getDefaultMessage()))
+        // a class-level constraint yields a global error; "" is the JSON Pointer of the whole body
+        List<FieldError> errors = Stream.concat(
+                        ex.getBindingResult().getFieldErrors().stream()
+                                .map(e -> new FieldError(e.getField(), e.getDefaultMessage())),
+                        ex.getBindingResult().getGlobalErrors().stream()
+                                .map(e -> new FieldError("", e.getDefaultMessage())))
                 .toList();
         return validationFailed(ex, errors, headers, request);
     }
@@ -51,19 +56,22 @@ public class MeterProblemHandler extends ResponseEntityExceptionHandler {
     @Override
     protected ResponseEntity<Object> handleMissingServletRequestParameter(MissingServletRequestParameterException ex, HttpHeaders headers,
                                                                           HttpStatusCode status, WebRequest request) {
-        List<FieldError> errors = List.of(new FieldError(ex.getParameterName(), "must not be null"));
+        List<FieldError> errors = List.of(new FieldError(ex.getParameterName(), "is required"));
         return validationFailed(ex, errors, headers, request);
     }
 
-    /** 400 /problems/validation-failed with errors sorted by field, then message, and the field names in detail. */
+    /** 400 /problems/validation-failed with errors sorted by field, then message; detail names the fields, or gives the class-level messages if there are none. */
     private ResponseEntity<Object> validationFailed(Exception ex, List<FieldError> errors, HttpHeaders headers,
                                                     WebRequest request) {
         List<FieldError> sorted = errors.stream()
                 .sorted(Comparator.comparing(FieldError::field)
                         .thenComparing(FieldError::message, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .toList();
-        String fields = String.join(", ", sorted.stream().map(FieldError::field).distinct().toList());
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid field(s): " + fields);
+        List<String> fields = sorted.stream().map(FieldError::field).filter(f -> !f.isEmpty()).distinct().toList();
+        String detail = fields.isEmpty()
+                ? "Invalid request: " + String.join("; ", sorted.stream().map(FieldError::message).distinct().toList())
+                : "Invalid field(s): " + String.join(", ", fields);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
         problem.setType(URI.create("/problems/validation-failed"));
         problem.setTitle("Invalid request");
         problem.setProperty("errors", sorted);
