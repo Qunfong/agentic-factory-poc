@@ -1,0 +1,12 @@
+[
+  {
+    "id": "WI-1",
+    "title": "Class-level validation errors appear in errors[]; a missing request parameter says 'is required'",
+    "ac_ids": ["AC-F60-1", "AC-F60-2"],
+    "paths": [
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/test/java/com/example/meter/GlobalValidationProblemTest.java"
+    ],
+    "depends_on": []
+  }
+]
