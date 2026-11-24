@@ -1,0 +1,15 @@
+[
+  {
+    "id": "WI-1",
+    "title": "GET /meters/{id} returns the registered meter (200) or 404 meter-not-found",
+    "ac_ids": ["AC-F32-1", "AC-F32-2"],
+    "paths": [
+      "app/src/main/java/com/example/meter/MeterController.java",
+      "app/src/main/java/com/example/meter/MeterService.java",
+      "app/src/main/java/com/example/meter/MeterNotFoundException.java",
+      "app/src/main/java/com/example/meter/MeterProblemHandler.java",
+      "app/src/test/java/com/example/meter/MeterLookupTest.java"
+    ],
+    "depends_on": []
+  }
+]
