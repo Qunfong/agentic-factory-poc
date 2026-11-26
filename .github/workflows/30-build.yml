@@ -45,6 +45,7 @@ jobs:
     outputs:
       base_sha: ${{ steps.base.outputs.sha }}
       run_tester: ${{ steps.base.outputs.run_tester }}
+      builder_tools: ${{ steps.base.outputs.builder_tools }}
     env:
       ISSUE: ${{ inputs.issue }}
       ROUND: ${{ inputs.round }}
@@ -63,6 +64,23 @@ jobs:
           if [ "$ROUND" = 0 ] && [ "$exists" = false ]; then echo "run_tester=true"; else echo "run_tester=false"; fi >> "$GITHUB_OUTPUT"
           mkdir -p "$RUNNER_TEMP/wi-input"
           gh issue view "$ISSUE" -R "$GITHUB_REPOSITORY" --json title,body,labels > "$RUNNER_TEMP/wi-input/issue.json"
+          # The builder's own Claude Code tool scope follows the work item's declared Paths: line
+          # too (ADR-0020 fixed publish.py's guard; the agent's own allowedTools needs the same fix,
+          # or it never has the ability to write the one file a docs/build-file work item needs -
+          # own incident, found redispatching F35 after ADR-0020 merged).
+          allowed=()
+          while IFS=, read -ra items; do
+            for p in "${items[@]}"; do
+              p="$(echo "$p" | xargs)"
+              [ -z "$p" ] && continue
+              case "$p" in app/src/test/*) continue ;; esac
+              allowed+=("$p")
+            done
+          done < <(jq -r '.body' "$RUNNER_TEMP/wi-input/issue.json" | sed -n 's/^Paths: //p')
+          [ "${#allowed[@]}" -eq 0 ] && allowed=("app/src/main/**")
+          tools="Read,Glob,Grep,Skill,Bash(mvn:*),Bash(git status),Bash(git diff:*)"
+          for p in "${allowed[@]}"; do tools="$tools,Edit($p),Write($p)"; done
+          echo "builder_tools=$tools" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.base.outputs.sha }}
@@ -222,7 +240,7 @@ jobs:
           prompt: "${{ format('Follow the instructions in the file {0}. Work item #{1}, fix round {2}.', format('{0}/wi-input/builder.md', runner.temp), inputs.issue, inputs.round) }}"
           claude_args: >-
             --model claude-opus-5-5 --max-turns 80
-            --allowedTools "Read,Glob,Grep,Skill,Edit(app/src/main/**),Write(app/src/main/**),Bash(mvn:*),Bash(git status),Bash(git diff:*)"
+            --allowedTools "${{ needs.prepare.outputs.builder_tools }}"
       - name: Hand over the change as a patch (publish guards, commits, pushes and opens the PR)
         run: |
           mkdir -p "$RUNNER_TEMP/out"

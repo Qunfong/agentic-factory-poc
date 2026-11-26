@@ -11,6 +11,10 @@ BRANCH_RE = re.compile(r"^(spec/F[1-9][0-9]*|wi-[1-9][0-9]*|design/D[1-9][0-9]*)
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 BOT = ("factory-bot", "factory-bot@users.noreply.github.com")
 STUB_MARKER = "// factory-test-stub"
+# Never allowed for the builder, however a work item's own `paths` was written (same places a
+# spec writer may never touch either) - the deny-list check_paths.py itself has no notion of.
+DENIED_PREFIXES = (".github/", "factory/", ".claude/")
+DENIED_EXACT = ("AGENTS.md", "CLAUDE.md")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,6 +77,24 @@ class Rejected(Exception):
     pass
 
 
+def builder_allowed_paths(paths):
+    """A builder work item's own declared `paths` (from work-items.json, via the issue body),
+    minus the tester's app/src/test/** files - never one path guard's problem to assign to the
+    other role. None (meaning: fall back to the static app/src/main/** guard) when `paths` is
+    empty or every entry is a test file, so a work item with no explicit paths, or an older one
+    from before this existed, behaves exactly as before.
+
+    A path a spec writer may also never touch (own charter's `denied`) raises instead of silently
+    narrowing the guard, so a typo'd or malicious path in work-items.json fails loudly, not open."""
+    allowed = [p for p in paths if not p.startswith("app/src/test/")]
+    if not allowed:
+        return None
+    for p in allowed:
+        if p in DENIED_EXACT or any(p.startswith(pre) for pre in DENIED_PREFIXES):
+            raise Rejected(f"work item path {p!r} is never allowed for the builder")
+    return allowed
+
+
 def git(*args, check=True):
     r = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
     if check and r.returncode:
@@ -110,7 +132,7 @@ def remove_shadowed_stubs():
             git("rm", "-q", "--", str(stub_path).replace(os.sep, "/"))
 
 
-def publish(role_name, issue, round_, base_sha, patch, trusted, tester_model="", run_id=""):
+def publish(role_name, issue, round_, base_sha, patch, trusted, tester_model="", run_id="", issue_paths=None):
     if role_name not in ROLES:
         raise Rejected(f"unknown role {role_name!r}; known: {sorted(ROLES)}")
     if not re.fullmatch(r"[1-9][0-9]*", issue) or not re.fullmatch(r"[0-9]+", round_):
@@ -137,9 +159,14 @@ def publish(role_name, issue, round_, base_sha, patch, trusted, tester_model="",
             raise Rejected("patch does not apply cleanly to the base sha")
         git("apply", "--index", "--binary", str(patch))
 
+    role_guard = role.guard
+    if role_name == "builder":
+        allowed = builder_allowed_paths(issue_paths or [])
+        if allowed is not None:
+            role_guard = tuple(x for p in allowed for x in ("--allow", p))
     guard = subprocess.run([sys.executable, str(pathlib.Path(trusted) / "check_paths.py"),
                             "--base", base_sha, "--expect-head", base_sha,
-                            *(arg.format(**fields) for arg in role.guard)])
+                            *(arg.format(**fields) for arg in role_guard)])
     if guard.returncode:
         raise Rejected(f"path guard failed for role {role_name}")
 
@@ -195,10 +222,12 @@ def main():
     p.add_argument("--trusted", required=True, help="directory holding the base commit's guard tools")
     p.add_argument("--pr-dir", required=True)
     p.add_argument("--tester-model", default="")
+    p.add_argument("--issue-paths", default="", help="comma-separated, from the issue's own Paths: line")
     a = p.parse_args()
+    issue_paths = [p.strip() for p in a.issue_paths.split(",") if p.strip()]
     try:
         role, branch = publish(a.role, a.issue, a.round, a.base_sha, a.patch, a.trusted,
-                               a.tester_model, os.environ.get("GITHUB_RUN_ID", ""))
+                               a.tester_model, os.environ.get("GITHUB_RUN_ID", ""), issue_paths)
         if role.pr:
             write_pr(role, a.trusted, pathlib.Path(a.pr_dir), a.issue, os.environ.get("ISSUE_TITLE", ""), a.base_sha)
     except Rejected as e:
