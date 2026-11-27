@@ -33,10 +33,16 @@ public class ReadingController {
     static final MediaType TEXT_CSV_UTF8 = new MediaType("text", "csv", StandardCharsets.UTF_8);
 
     private final List<Reading> readings = new CopyOnWriteArrayList<>();
+    private final MeterService meters;
+
+    public ReadingController(MeterService meters) {
+        this.meters = meters;
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Reading add(@Valid @RequestBody Reading reading) {
+        meters.find(reading.meterId()); // throws MeterNotFoundException (404) before anything is stored
         readings.add(reading);
         return reading;
     }
