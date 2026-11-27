@@ -1,0 +1,30 @@
+[
+  {
+    "id": "WI-1",
+    "title": "Tester loop refuses to finish while its test files have no test method or do not test-compile",
+    "ac_ids": ["AC-F72-1"],
+    "paths": [
+      "tools/check_tester_output.py",
+      "tools/tester_loop.py",
+      "tools/tests/test_check_tester_output.py",
+      "tools/tests/test_tester_completion.py"
+    ],
+    "depends_on": []
+  },
+  {
+    "id": "WI-2",
+    "title": "publish-tests rejects methodless or non-compiling tester patches in a secret-less gate and labels factory:tester-failed",
+    "ac_ids": ["AC-F72-2", "AC-F72-3"],
+    "paths": [
+      ".github/workflows/publish.yml",
+      ".github/workflows/30-build.yml",
+      "tools/check_workflow_policy.py",
+      "tools/tests/test_check_workflow_policy_tester_gate.py",
+      "tools/bootstrap.sh",
+      "tools/bootstrap.ps1",
+      "tools/tests/test_bootstrap.py",
+      "tools/tests/test_bootstrap_apply.py"
+    ],
+    "depends_on": ["WI-1"]
+  }
+]
