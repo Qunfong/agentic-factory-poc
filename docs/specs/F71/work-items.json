@@ -1,0 +1,13 @@
+[
+  {
+    "id": "WI-1",
+    "title": "45-fix-round classifies build-test failures and escalates at once when only undeclared pre-existing tests fail",
+    "ac_ids": ["AC-F71-1", "AC-F71-2", "AC-F71-3"],
+    "paths": [
+      "tools/classify_failures.py",
+      "tools/tests/test_classify_failures.py",
+      ".github/workflows/45-fix-round.yml"
+    ],
+    "depends_on": []
+  }
+]
