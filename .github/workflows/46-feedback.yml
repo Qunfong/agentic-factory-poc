@@ -1,0 +1,62 @@
+# Brief 033 (Qun, 2026-11-24): a maintainer reviews a factory PR with ordinary review comments, sets the
+# label `factory:fix`, and the next builder round runs with those comments as input. Same round cap as 45.
+name: 46 feedback
+on:
+  pull_request:
+    types: [labeled]
+permissions: {}
+jobs:
+  authorize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.label.name == 'factory:fix' &&
+      startsWith(github.event.pull_request.head.ref, 'wi-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Only a maintainer, an admin or the factory bot may start a fix round (brief 009, Q27)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.event.sender.login }}
+          EVENT: ${{ github.event_name }}
+        run: python3 tools/authorize.py --event "$EVENT" "$ACTOR"
+
+  next-round:
+    needs: authorize
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.label.name == 'factory:fix' &&
+      startsWith(github.event.pull_request.head.ref, 'wi-')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      issues: write
+      pull-requests: write   # issue comments and labels on a PR are authorised by this scope
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Start the next builder round, or escalate at the cap
+        run: |
+          set -euo pipefail
+          [[ "$BRANCH" =~ ^wi-([1-9][0-9]*)$ ]] || { echo "::error::agent branch must be wi-<issue number>"; exit 1; }
+          issue="${BASH_REMATCH[1]}"
+          # the label is single-use: remove it first so a second label event starts a second round
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/factory%3Afix"
+          rounds=$(gh issue view "$issue" -R "$GITHUB_REPOSITORY" --json labels -q '[.labels[].name | select(startswith("round:"))] | length')
+          next=$((rounds + 1))
+          if [ "$next" -gt 2 ]; then
+            gh issue edit "$issue" -R "$GITHUB_REPOSITORY" --add-label escalated
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="Fix-round limit reached; a person takes over."
+            exit 0
+          fi
+          gh issue edit "$issue" -R "$GITHUB_REPOSITORY" --add-label "round:$next"
+          gh workflow run "30 build" -R "$GITHUB_REPOSITORY" -f issue="$issue" -f round="$next"
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="Fix round $next started with your review comments."
