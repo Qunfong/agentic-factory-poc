@@ -1,0 +1,14 @@
+[
+  {
+    "id": "WI-1",
+    "title": "Tester publish guard accepts modifications to declared existing test files, never fewer test methods; builder still never touches tests",
+    "ac_ids": ["AC-F70-1", "AC-F70-2", "AC-F70-3", "AC-F70-4"],
+    "paths": [
+      "tools/publish.py",
+      "tools/check_paths.py",
+      "tools/tests/test_publish.py",
+      "tools/tests/test_check_paths.py"
+    ],
+    "depends_on": []
+  }
+]
