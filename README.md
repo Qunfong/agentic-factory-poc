@@ -3,6 +3,34 @@
 A base setup that takes one feature from design to production with AI agents and four human gates,
 following the *Agentic Software Factory – Logical Reference Architecture*.
 
+## HTTP API
+
+Run the meter service with `mvn -f app/pom.xml spring-boot:run`. It listens on `http://localhost:8080`, and errors come back as `application/problem+json` (RFC 9457). Every endpoint can also return 405 for the wrong method, 415 for the wrong content type and 500 for a server error. These are not repeated in the table.
+
+| Endpoint | Success | Errors |
+| --- | --- | --- |
+| `POST /meters` | 201 Created, body `{"id", "type", "unit"}` | 400: `id` blank or missing, `type` missing or unknown (`electricity`, `solar`, `ev_charger`, `gas`, `battery`, `transformer`; case-sensitive), or unreadable JSON. 409: `id` already registered (`/problems/meter-already-registered`) |
+| `POST /readings` | 201 Created, body echoes the reading | 400: `meterId` blank or missing, `takenAt` missing or not an ISO-8601 instant, `kwh` missing or negative, or unreadable JSON |
+| `GET /readings?meterId={id}` | 200 OK, JSON array of readings (empty if none) | 400: `meterId` parameter missing |
+| `GET /readings/count` | 200 OK, `{"count": n}` | none specific |
+| `DELETE /readings?meterId={id}` | 204 No Content, also when the meter has no readings | 400: `meterId` parameter missing |
+
+Register a meter:
+
+```bash
+curl -i -X POST http://localhost:8080/meters \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "m-1", "type": "electricity"}'
+```
+
+Post a reading (`takenAt` is a UTC ISO-8601 instant, `kwh` is a non-negative decimal):
+
+```bash
+curl -i -X POST http://localhost:8080/readings \
+  -H 'Content-Type: application/json' \
+  -d '{"meterId": "m-1", "takenAt": "2026-01-01T00:00:00Z", "kwh": 12.5}'
+```
+
 ## Flow
 
 | Stage | Trigger | Who | Workflow |
